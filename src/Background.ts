@@ -11,7 +11,7 @@ export function initBackground() {
             id: `${EXTENSION_ID}/context-menu`,
             icons: [
                 {
-                    icon: "icon.svg",
+                    icon: `${import.meta.env.BASE_URL}icon.svg`,
                     label: "5e Tools",
                     filter: {
                         every: [{ key: "type", value: "IMAGE" }]
