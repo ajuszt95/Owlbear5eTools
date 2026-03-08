@@ -1,6 +1,6 @@
 {
     "name": "5e Tools Integration",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "manifest_version": 1,
     "description": "Integrate 5e.tools bestiary data with Owlbear Rodeo tokens.",
     "author": "ajuszt95",
