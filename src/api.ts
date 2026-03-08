@@ -6,7 +6,7 @@ export interface Monster {
     [key: string]: any; // full stat block
 }
 
-const GITHUB_MIRROR_BASE = "https://raw.githubusercontent.com/5etools-mirror-1/5etools-src/main/data/bestiary";
+const GITHUB_MIRROR_BASE = "https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data/bestiary";
 
 export async function fetchMonsterData(url: string): Promise<Monster> {
     let source = "";
