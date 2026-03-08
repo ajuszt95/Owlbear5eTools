@@ -4,12 +4,14 @@ export const EXTENSION_ID = "com.ajuszt95.5etools";
 export const METADATA_KEY = `${EXTENSION_ID}/monster`;
 
 export function initBackground() {
+    console.log("Initializing background script...");
     OBR.onReady(() => {
+        console.log("OBR Ready, registering context menu...");
         OBR.contextMenu.create({
             id: `${EXTENSION_ID}/context-menu`,
             icons: [
                 {
-                    icon: "/Owlbear5eTools/icon.svg",
+                    icon: "icon.svg",
                     label: "5e Tools",
                     filter: {
                         every: [{ key: "type", value: "IMAGE" }]
