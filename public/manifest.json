@@ -12,15 +12,6 @@
         "height": 1,
         "disableButton": true
     },
-    "background": {
-        "url": "/Owlbear5eTools/index.html"
-    },
-    "icon": "icon.svg",
-    "action_icons": [
-        {
-            "id": "com.ajuszt95.5etools/import",
-            "name": "5e Tools",
-            "icon": "icon.svg"
-        }
-    ]
+    "background_url": "/Owlbear5eTools/index.html",
+    "icon": "/Owlbear5eTools/icon.svg"
 }
