@@ -14,40 +14,40 @@ export const BUBBLES_NAME = "com.owlbear-rodeo-bubbles-extension/name";
 
 export function initBackground() {
     console.log("Initializing background script...");
-    OBR.onReady(() => {
+    OBR.onReady(async () => {
+        const role = await OBR.player.getRole();
+        console.log("Current player role:", role);
+
+        if (role !== "GM") {
+            console.log("Not a GM. Skipping menu registration.");
+            return;
+        }
+
         console.log("OBR Ready, registering context menu...");
         OBR.contextMenu.create({
             id: `${EXTENSION_ID}/context-menu`,
             icons: [
                 {
-                    icon: `${import.meta.env.BASE_URL}icon.svg`,
+                    icon: "/icon.svg",
                     label: "5e Tools",
                     filter: {
-                        every: [{ key: "type", value: "IMAGE" }]
+                        every: [
+                            { key: "layer", operator: "==", value: "CHARACTER" },
+                            { key: "type", operator: "==", value: "IMAGE" },
+                        ],
                     },
                 },
             ],
-            onClick: async (context) => {
-                const item = context.items[0];
-                if (!item) return;
+            onClick(context) {
+                const tokenId = context.items[0].id;
+                const hasMonster = context.items[0].metadata[METADATA_KEY];
 
-                const hasMonsterData = !!item.metadata[METADATA_KEY];
-
-                if (hasMonsterData) {
-                    OBR.popover.open({
-                        id: `${EXTENSION_ID}/view-popover`,
-                        url: `${import.meta.env.BASE_URL}#/view?id=${item.id}`,
-                        height: 600,
-                        width: 400,
-                    });
-                } else {
-                    OBR.popover.open({
-                        id: `${EXTENSION_ID}/import-popover`,
-                        url: `${import.meta.env.BASE_URL}#/import?id=${item.id}`,
-                        height: 250,
-                        width: 400,
-                    });
-                }
+                OBR.popover.open({
+                    id: hasMonster ? `${EXTENSION_ID}/view-popover` : `${EXTENSION_ID}/import-popover`,
+                    url: hasMonster ? `/#/view?id=${tokenId}` : `/#/import?id=${tokenId}`,
+                    height: 600,
+                    width: 400,
+                });
             },
         });
     });

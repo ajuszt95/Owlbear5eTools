@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import OBR from "@owlbear-rodeo/sdk";
-import { METADATA_KEY } from "./Background";
+import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID } from "./Background";
 
 // Helper to render 5e.tools entries safely
 const renderEntries = (entries: any[]) => {
@@ -28,6 +28,7 @@ const renderEntries = (entries: any[]) => {
 
 export default function ViewPopover() {
     const [monster, setMonster] = useState<any>(null);
+    const [tokenId, setTokenId] = useState<string | null>(null);
     const [error, setError] = useState<string>("");
 
     useEffect(() => {
@@ -39,21 +40,22 @@ export default function ViewPopover() {
                     const hashParts = window.location.hash.split("?");
                     const query = hashParts.length > 1 ? hashParts[1] : "";
                     const urlParams = new URLSearchParams(query);
-                    const tokenId = urlParams.get("id");
+                    const tid = urlParams.get("id");
 
                     console.log("ViewPopover: Hash:", window.location.hash);
-                    console.log("ViewPopover: Token ID from hash:", tokenId);
+                    console.log("ViewPopover: Token ID from hash:", tid);
 
-                    if (!tokenId) {
+                    if (!tid) {
                         setError("No token ID provided in the URL.");
                         return;
                     }
+                    setTokenId(tid);
 
-                    const items = await OBR.scene.items.getItems([tokenId]);
+                    const items = await OBR.scene.items.getItems([tid]);
                     console.log("ViewPopover: Fetched items from scene:", items.length);
 
                     if (items.length === 0) {
-                        setError(`Token not found in the current scene. (ID: ${tokenId})`);
+                        setError(`Token not found in the current scene. (ID: ${tid})`);
                         return;
                     }
 
@@ -75,6 +77,35 @@ export default function ViewPopover() {
         };
         initView();
     }, []);
+
+    const handleRemove = async () => {
+        if (!tokenId) return;
+        try {
+            await OBR.scene.items.updateItems([tokenId], (items) => {
+                const item = items[0];
+                if (!item) return;
+
+                // Clear monster metadata
+                delete item.metadata[METADATA_KEY];
+
+                // Clear Stat Bubbles metadata
+                delete item.metadata[BUBBLES_METADATA_KEY];
+                delete item.metadata["com.owlbear-rodeo-bubbles-extension/name"];
+
+                // Reset name and text attachment
+                item.name = "Token";
+                const imgItem = item as any;
+                if (imgItem.text) {
+                    imgItem.text.plainText = "";
+                }
+            });
+            console.log("Statblock removed from token:", tokenId);
+            await OBR.popover.close(`${EXTENSION_ID}/view-popover`);
+        } catch (err: any) {
+            console.error("Failed to remove statblock:", err);
+            setError(`Failed to remove: ${err.message}`);
+        }
+    };
 
     if (error) {
         return <div style={{ padding: "16px", fontFamily: "sans-serif", color: "#721c24", background: "#f8d7da", border: "1px solid #f5c6cb", borderRadius: "4px" }}>
@@ -125,7 +156,23 @@ export default function ViewPopover() {
 
     return (
         <div style={{ padding: "16px", fontFamily: "sans-serif", color: "#333", background: "#fdf5e6", minHeight: "100vh" }}>
-            <h2 style={{ color: "#58180D", borderBottom: "2px solid #58180D", margin: "0 0 4px 0", paddingBottom: "4px" }}>{monster.name || "Unknown Monster"}</h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #58180D", marginBottom: "4px", paddingBottom: "4px" }}>
+                <h2 style={{ color: "#58180D", margin: 0 }}>{monster.name || "Unknown Monster"}</h2>
+                <button
+                    onClick={handleRemove}
+                    style={{
+                        padding: "4px 8px",
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        background: "#800",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px"
+                    }}
+                >
+                    Remove Statblock
+                </button>
+            </div>
             <div style={{ fontStyle: "italic", marginBottom: "8px" }}>
                 {monster.size || "?"} {monsterType || "Unknown Type"}{alignText ? `, ${alignText}` : ""}
             </div>
