@@ -3,10 +3,42 @@ export interface Monster {
     source: string;
     hp?: { average?: number };
     ac?: Array<number | { ac: number }>;
+    size?: string[]; // e.g. ["M"]
+    tokenUrl?: string; // Resolved GitHub Mirror URL
     [key: string]: any; // full stat block
 }
 
 const GITHUB_MIRROR_BASE = "https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data/bestiary";
+const GITHUB_IMAGE_BASE = "https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main";
+
+/**
+ * Calculates a reliable GitHub Raw mirror URL for a monster token.
+ * We prefer GitHub for reliability and CORS compatibility.
+ */
+export function calculateTokenUrl(name: string, source: string): string {
+    // 5e.tools uses specific naming conventions for images.
+    // Usually it's [SOURCE]/[NAME].png
+    // Spaces and special characters are preserved in the folder/file names on GitHub.
+    return `${GITHUB_IMAGE_BASE}/token/${source}/${name}.png`;
+}
+
+/**
+ * Maps 5e.tools creature sizes to Owlbear Rodeo grid unit sizes (at 150 DPI default).
+ */
+export function getMonsterDimensions(size?: string[]): { width: number; height: number } {
+    const s = size?.[0]?.toUpperCase() || "M";
+
+    // Grid units * 150 (standard OBR DPI for 1x1 token)
+    switch (s) {
+        case "T": return { width: 150, height: 150 };  // Tiny -> 1x1
+        case "S": return { width: 150, height: 150 };  // Small -> 1x1
+        case "M": return { width: 150, height: 150 };  // Medium -> 1x1
+        case "L": return { width: 300, height: 300 };  // Large -> 2x2
+        case "H": return { width: 450, height: 450 };  // Huge -> 3x3
+        case "G": return { width: 600, height: 600 };  // Gargantuan -> 4x4
+        default: return { width: 150, height: 150 };
+    }
+}
 
 export async function fetchMonsterData(url: string): Promise<Monster> {
     let source = "";
@@ -17,17 +49,17 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
 
         // 1. Check for standard hash format: https://5e.tools/bestiary.html#aarakocra_lox
         if (urlObj.hash && urlObj.hash.includes("_")) {
-            const parts = urlObj.hash.substring(1).split("_"); // remove leading #
-            source = parts.pop() || "";
-            nameIdentifier = parts.join("_");
+            const hashParts = urlObj.hash.substring(1).split("_"); // remove leading #
+            source = hashParts.pop() || "";
+            nameIdentifier = hashParts.join("_");
         }
         // 2. Check for path format: https://5e.tools/bestiary/aarakocra-spelljammer-lox.html
         else if (urlObj.pathname.includes(".html")) {
             const pathPart = urlObj.pathname.split("/").pop() || "";
             const nameWithoutExt = pathPart.replace(".html", "");
-            const parts = nameWithoutExt.split("-");
-            source = parts.pop() || "";
-            nameIdentifier = parts.join("-");
+            const pathParts = nameWithoutExt.split("-");
+            source = pathParts.pop() || "";
+            nameIdentifier = pathParts.join("-");
         } else {
             throw new Error("Invalid 5e.tools URL format. Expected a hash (#name_source) or specific path.");
         }
@@ -52,11 +84,7 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
         }
 
         // Find the specific monster
-        // Name matching is tricky because the URL might have "aarakocra-spelljammer" or "aarakocra_lox"
-        // while the JSON name is "Aarakocra (Spelljammer)" or "Aarakocra"
-        // To cleanly match, we remove special characters and lowercase everything.
         const sanitize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
-
         const targetNameSanitized = sanitize(nameIdentifier);
 
         let foundMonster = monsterList.find((m) =>
@@ -65,13 +93,18 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
             sanitize(m.name).startsWith(targetNameSanitized)
         );
 
-        // If exact name matching fails, fallback to any monster in that source that closely resembles it
+        // If exact name matching fails, fallback
         if (!foundMonster) {
             foundMonster = monsterList.find(m => sanitize(m.name).includes(targetNameSanitized.substring(0, 5)));
         }
 
         if (!foundMonster) {
             throw new Error(`Monster matching '${nameIdentifier}' not found in the source book data.`);
+        }
+
+        // Attach resolved token URL for the Quick Spawn feature
+        if (foundMonster.hasToken) {
+            foundMonster.tokenUrl = calculateTokenUrl(foundMonster.name, foundMonster.source);
         }
 
         return foundMonster;
@@ -88,8 +121,8 @@ export function extractAC(monster: Monster): number {
     const firstAC = monster.ac[0];
     if (typeof firstAC === "number") {
         return firstAC;
-    } else if (firstAC && typeof firstAC === "object" && typeof firstAC.ac === "number") {
-        return firstAC.ac;
+    } else if (firstAC && typeof firstAC === "object" && typeof (firstAC as any).ac === "number") {
+        return (firstAC as any).ac;
     }
     return 10;
 }
