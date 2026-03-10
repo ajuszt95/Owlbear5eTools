@@ -13,7 +13,9 @@ export async function spawnMonster(url: string) {
     const dims = getMonsterDimensions(monster.size);
 
     // Get the center of the current screen in world coordinates
-    const center = await OBR.viewport.getPosition();
+    const width = await OBR.viewport.getWidth();
+    const height = await OBR.viewport.getHeight();
+    const center = await OBR.viewport.inverseTransformPoint({ x: width / 2, y: height / 2 });
 
     // buildImage properties:
     // 1. Image source property { url, mime }

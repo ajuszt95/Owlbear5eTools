@@ -16,10 +16,10 @@ const GITHUB_IMAGE_BASE = "https://raw.githubusercontent.com/5etools-mirror-3/5e
  * We prefer GitHub for reliability and CORS compatibility.
  */
 export function calculateTokenUrl(name: string, source: string): string {
-    // 5e.tools uses specific naming conventions for images.
-    // Usually it's [SOURCE]/[NAME].png
-    // Spaces and special characters are preserved in the folder/file names on GitHub.
-    return `${GITHUB_IMAGE_BASE}/token/${source}/${name}.png`;
+    // 5e.tools mirrors use a specific directory structure and .webp format for tokens.
+    // Pattern: bestiary/tokens/[SOURCE]/[NAME].webp
+    // Note: Spaces in the filename should be preserved or handled by the requester (encoded).
+    return `${GITHUB_IMAGE_BASE}/bestiary/tokens/${source}/${encodeURIComponent(name)}.webp`;
 }
 
 /**
