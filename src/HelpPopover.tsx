@@ -1,4 +1,6 @@
 import { useState } from "react";
+import OBR from "@owlbear-rodeo/sdk";
+import { fetchMonsterData } from "./api";
 import { spawnMonster } from "./spawning";
 
 export default function HelpPopover() {
@@ -11,8 +13,26 @@ export default function HelpPopover() {
         setLoading(true);
         setError("");
         setSuccess(false);
+        const trimUrl = spawnUrl.trim();
         try {
-            await spawnMonster(spawnUrl);
+            const monster = await fetchMonsterData(trimUrl);
+            const tokenUrl = monster.tokenUrl || "https://5e.tools/img/token/blank.png";
+
+            // Pre-fetch image dimensions for accurate DPI calculation in OBR
+            const img = new Image();
+            img.src = tokenUrl;
+
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = () => reject(new Error("Failed to load token image dimensions."));
+                // Timeout after 5s
+                setTimeout(() => reject(new Error("Image dimension fetch timed out.")), 5000);
+            });
+
+            const actualWidth = img.naturalWidth || 300;
+            const actualHeight = img.naturalHeight || 300;
+
+            await spawnMonster(trimUrl, actualWidth, actualHeight);
             setSuccess(true);
             setSpawnUrl(""); // clear input
         } catch (err: any) {
@@ -43,7 +63,7 @@ export default function HelpPopover() {
                     DM Toolbox
                 </h2>
                 <p style={{ margin: "4px 0 0 0", color: "#888", fontSize: "14px", fontWeight: 500 }}>
-                    5e.tools Integration v1.1.4
+                    5e.tools Integration v1.1.5
                 </p>
             </header>
 
