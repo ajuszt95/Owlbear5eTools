@@ -24,7 +24,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
     if (this.state.hasError) {
       return (
         <div style={{ padding: "20px", color: "white", background: "#800", borderRadius: "8px", margin: "10px", fontFamily: "sans-serif" }}>
-          <h2>Extension Crashed (v1.0.8)</h2>
+          <h2>Extension Crashed (v1.0.10)</h2>
           <p>Something went wrong. Please share this error with the developer:</p>
           <pre style={{ background: "rgba(0,0,0,0.5)", padding: "10px", overflow: "auto", fontSize: "12px" }}>
             {this.state.error?.stack || this.state.error?.message}
@@ -67,7 +67,7 @@ const Root = () => {
 
   return (
     <div style={{ padding: "20px", color: "white", background: "#222", minHeight: "100vh", fontFamily: "sans-serif" }}>
-      <h2>5e Tools Diagnostics (v1.0.8)</h2>
+      <h2>5e Tools Diagnostics (v1.0.10)</h2>
       <p>Current Hash: <code>{hash}</code></p>
       <p>No route matched. This usually happens if the extension was opened in a way it didn't expect.</p>
       <div style={{ marginTop: "20px", fontSize: "12px", opacity: 0.7 }}>

@@ -28,7 +28,7 @@ export function initBackground() {
             id: `${EXTENSION_ID}/context-menu`,
             icons: [
                 {
-                    icon: "/icon.svg",
+                    icon: `${import.meta.env.BASE_URL}icon.svg`,
                     label: "5e Tools",
                     filter: {
                         every: [
@@ -44,7 +44,9 @@ export function initBackground() {
 
                 OBR.popover.open({
                     id: hasMonster ? `${EXTENSION_ID}/view-popover` : `${EXTENSION_ID}/import-popover`,
-                    url: hasMonster ? `/#/view?id=${tokenId}` : `/#/import?id=${tokenId}`,
+                    url: hasMonster
+                        ? `${import.meta.env.BASE_URL}#/view?id=${tokenId}`
+                        : `${import.meta.env.BASE_URL}#/import?id=${tokenId}`,
                     height: 600,
                     width: 400,
                 });
