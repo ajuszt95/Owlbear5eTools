@@ -25,7 +25,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
     if (this.state.hasError) {
       return (
         <div style={{ padding: "20px", color: "white", background: "#800", borderRadius: "8px", margin: "10px", fontFamily: "sans-serif" }}>
-          <h2>Extension Crashed (v1.1.1)</h2>
+          <h2>Extension Crashed (v1.1.2)</h2>
           <p>Something went wrong. Please share this error with the developer:</p>
           <pre style={{ background: "rgba(0,0,0,0.5)", padding: "10px", overflow: "auto", fontSize: "12px" }}>
             {this.state.error?.stack || this.state.error?.message}

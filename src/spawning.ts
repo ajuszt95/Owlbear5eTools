@@ -10,26 +10,30 @@ export async function spawnMonster(url: string) {
     const monster = await fetchMonsterData(url);
     const hp = extractHP(monster);
     const ac = extractAC(monster);
-    const dims = getMonsterDimensions(monster.size);
+    const { multiplier } = getMonsterDimensions(monster.size);
 
     // Get the center of the current screen in world coordinates
     const width = await OBR.viewport.getWidth();
     const height = await OBR.viewport.getHeight();
     const center = await OBR.viewport.inverseTransformPoint({ x: width / 2, y: height / 2 });
 
-    // buildImage properties:
-    // 1. Image source property { url, mime }
-    // 2. Grid property { width, height }
+    // Constants for internal image resolution
+    const BASE_RESOLUTION = 300;
+
     const imageItem = buildImage(
         {
             url: monster.tokenUrl || "https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/token/blank.png",
             mime: "image/png",
-            width: dims.width,
-            height: dims.height,
+            width: BASE_RESOLUTION,
+            height: BASE_RESOLUTION,
         },
         {
-            dpi: 150,
-            offset: { x: 0, y: 0 }
+            // OBR scale is SceneDPI / ItemDPI. 
+            // To make an item X units wide: ItemDPI = SceneDPI / X.
+            // But since OBR items are anchored Top-Left by default, 
+            // using an offset of Half-Width/Half-Height anchors it at the Center.
+            dpi: BASE_RESOLUTION / multiplier,
+            offset: { x: BASE_RESOLUTION / 2, y: BASE_RESOLUTION / 2 }
         }
     )
         .position(center)

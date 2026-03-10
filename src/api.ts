@@ -25,18 +25,18 @@ export function calculateTokenUrl(name: string, source: string): string {
 /**
  * Maps 5e.tools creature sizes to Owlbear Rodeo grid unit sizes (at 150 DPI default).
  */
-export function getMonsterDimensions(size?: string[]): { width: number; height: number } {
+export function getMonsterDimensions(size?: string[]): { multiplier: number } {
     const s = size?.[0]?.toUpperCase() || "M";
 
-    // Grid units * 150 (standard OBR DPI for 1x1 token)
+    // Grid units (multiplier)
     switch (s) {
-        case "T": return { width: 150, height: 150 };  // Tiny -> 1x1
-        case "S": return { width: 150, height: 150 };  // Small -> 1x1
-        case "M": return { width: 150, height: 150 };  // Medium -> 1x1
-        case "L": return { width: 300, height: 300 };  // Large -> 2x2
-        case "H": return { width: 450, height: 450 };  // Huge -> 3x3
-        case "G": return { width: 600, height: 600 };  // Gargantuan -> 4x4
-        default: return { width: 150, height: 150 };
+        case "T": return { multiplier: 0.5 }; // Tiny -> 0.5x0.5
+        case "S": return { multiplier: 1 };   // Small -> 1x1
+        case "M": return { multiplier: 1 };   // Medium -> 1x1
+        case "L": return { multiplier: 2 };   // Large -> 2x2
+        case "H": return { multiplier: 3 };   // Huge -> 3x3
+        case "G": return { multiplier: 4 };   // Gargantuan -> 4x4
+        default: return { multiplier: 1 };
     }
 }
 
