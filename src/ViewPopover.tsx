@@ -92,12 +92,8 @@ export default function ViewPopover() {
                 delete item.metadata[BUBBLES_METADATA_KEY];
                 delete item.metadata["com.owlbear-rodeo-bubbles-extension/name"];
 
-                // Reset name and text attachment
+                // Reset name
                 item.name = "Token";
-                const imgItem = item as any;
-                if (imgItem.text) {
-                    imgItem.text.plainText = "";
-                }
             });
             console.log("Statblock removed from token:", tokenId);
             await OBR.popover.close(`${EXTENSION_ID}/view-popover`);
@@ -114,7 +110,7 @@ export default function ViewPopover() {
     }
 
     if (!monster) {
-        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.0.12)...</div>;
+        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.0.13)...</div>;
     }
 
     let speedText = "30ft.";

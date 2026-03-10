@@ -31,18 +31,7 @@ export default function ImportPopover() {
                 const item = items[0];
                 if (!item) return;
 
-                // Stop overwriting the standard Owlbear Rodeo name
-                // item.name = monsterData.name; (Removed)
-
-                // Update the text attachment HP/AC details, but keep the name as is or just show stats
-                const imgItem = item as any;
-                if (!imgItem.text) {
-                    imgItem.text = { plainText: "", richText: [], type: "PLAIN", style: { padding: 4, backgroundAlpha: 0.5, fillOpacity: 1, strokeOpacity: 1 } as any };
-                }
-                // We keep the original name if possible, or just append the stats
-                const currentName = item.name || "Token";
-                imgItem.text.plainText = `${currentName}\nHP: ${hp} | AC: ${ac}`;
-
+                // Update context menu item metadata
                 item.metadata[METADATA_KEY] = monsterData;
 
                 // Stat Bubbles Extension Integration
@@ -176,7 +165,7 @@ export default function ImportPopover() {
             </div>
 
             <footer style={{ marginTop: "auto", paddingTop: "24px", textAlign: "center", fontSize: "11px", color: "#999" }}>
-                <p>Version 1.0.12 | Connected to 5e.tools</p>
+                <p>Version 1.0.13 | Connected to 5e.tools</p>
             </footer>
         </div>
     );
