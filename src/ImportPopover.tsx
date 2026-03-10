@@ -46,9 +46,11 @@ export default function ImportPopover() {
                 const metadata = item.metadata as any;
                 metadata[BUBBLES_METADATA_KEY] = {
                     ...(metadata[BUBBLES_METADATA_KEY] || {}),
-                    hp: hp,
-                    maxHp: hp,
-                    ac: ac
+                    health: hp,
+                    maxHealth: hp,
+                    tempHealth: 0,
+                    armorClass: ac,
+                    hideStats: false
                 };
 
                 console.log("Updated item metadata for token:", tokenId, "Metadata Keys:", Object.keys(item.metadata));
