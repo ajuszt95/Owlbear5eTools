@@ -48,7 +48,7 @@ export function initBackground() {
                         ? `${import.meta.env.BASE_URL}#/view?id=${tokenId}`
                         : `${import.meta.env.BASE_URL}#/import?id=${tokenId}`,
                     height: 600,
-                    width: 400,
+                    width: 350,
                 });
             },
         });

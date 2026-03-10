@@ -66,10 +66,11 @@ export default function ImportPopover() {
             fontFamily: "'Inter', sans-serif",
             color: "#333",
             background: "#fdf5e6",
-            minHeight: "100vh",
+            minHeight: "100%", // Changed from 100vh
             display: "flex",
             flexDirection: "column",
-            alignItems: "stretch"
+            alignItems: "stretch",
+            boxSizing: "border-box"
         }}>
             <header style={{ marginBottom: "24px", textAlign: "center" }}>
                 <h1 style={{
@@ -165,7 +166,7 @@ export default function ImportPopover() {
             </div>
 
             <footer style={{ marginTop: "auto", paddingTop: "24px", textAlign: "center", fontSize: "11px", color: "#999" }}>
-                <p>Version 1.0.13 | Connected to 5e.tools</p>
+                <p>Version 1.0.14 | Connected to 5e.tools</p>
             </footer>
         </div>
     );
