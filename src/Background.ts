@@ -47,7 +47,7 @@ export function initBackground() {
                     url: hasMonster
                         ? `${import.meta.env.BASE_URL}#/view?id=${tokenId}`
                         : `${import.meta.env.BASE_URL}#/import?id=${tokenId}`,
-                    height: 600,
+                    height: hasMonster ? 600 : 300,
                     width: 350,
                 });
             },

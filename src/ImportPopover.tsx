@@ -166,7 +166,7 @@ export default function ImportPopover() {
             </div>
 
             <footer style={{ marginTop: "auto", paddingTop: "24px", textAlign: "center", fontSize: "11px", color: "#999" }}>
-                <p>Version 1.0.14 | Connected to 5e.tools</p>
+                <p>Version 1.0.15 | Connected to 5e.tools</p>
             </footer>
         </div>
     );
