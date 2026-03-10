@@ -4,6 +4,14 @@ export const EXTENSION_ID = "com.ajuszt95.5etools";
 export const METADATA_KEY = `${EXTENSION_ID}/monster`;
 export const BUBBLES_METADATA_KEY = "com.owlbear-rodeo-bubbles-extension/metadata";
 
+// Stat Bubbles Metadata IDs
+export const BUBBLES_HEALTH = "health";
+export const BUBBLES_MAX_HEALTH = "max health";
+export const BUBBLES_TEMP_HEALTH = "temporary health";
+export const BUBBLES_ARMOR_CLASS = "armor class";
+export const BUBBLES_HIDE = "hide";
+export const BUBBLES_NAME = "com.owlbear-rodeo-bubbles-extension/name";
+
 export function initBackground() {
     console.log("Initializing background script...");
     OBR.onReady(() => {

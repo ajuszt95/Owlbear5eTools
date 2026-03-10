@@ -83,29 +83,55 @@ export default function ViewPopover() {
     }
 
     if (!monster) {
-        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.0.6)...</div>;
+        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.0.8)...</div>;
     }
 
-    const speedText = monster.speed
-        ? Object.entries(monster.speed).map(([k, v]) => `${k} ${(v as any).number || v}ft.`).join(", ")
-        : "30ft.";
+    let speedText = "30ft.";
+    try {
+        if (monster.speed && typeof monster.speed === 'object') {
+            speedText = Object.entries(monster.speed)
+                .map(([k, v]) => `${k} ${(v as any)?.number || v}ft.`)
+                .join(", ");
+        } else if (typeof monster.speed === 'string') {
+            speedText = monster.speed;
+        }
+    } catch (e) {
+        console.warn("Error parsing speed:", e);
+    }
 
     let acText = "10";
-    if (monster.ac && monster.ac.length > 0) {
-        acText = monster.ac.map((a: any) => a.ac || a).join(", ");
+    try {
+        if (Array.isArray(monster.ac)) {
+            acText = monster.ac.map((a: any) => (typeof a === 'object' ? (a.ac || a.xml || "??") : a)).join(", ");
+        } else if (monster.ac) {
+            acText = monster.ac.toString();
+        }
+    } catch (e) {
+        console.warn("Error parsing AC:", e);
     }
 
-    let alignText = monster.alignment && Array.isArray(monster.alignment) ? monster.alignment.join("") : (monster.alignment || "");
+    let alignText = "";
+    try {
+        if (Array.isArray(monster.alignment)) {
+            alignText = monster.alignment.join(", ");
+        } else if (monster.alignment) {
+            alignText = monster.alignment.toString();
+        }
+    } catch (e) {
+        console.warn("Error parsing alignment:", e);
+    }
+
+    const monsterType = typeof monster.type === 'object' ? (monster.type.type || JSON.stringify(monster.type)) : monster.type;
 
     return (
         <div style={{ padding: "16px", fontFamily: "sans-serif", color: "#333", background: "#fdf5e6", minHeight: "100vh" }}>
-            <h2 style={{ color: "#58180D", borderBottom: "2px solid #58180D", margin: "0 0 4px 0", paddingBottom: "4px" }}>{monster.name}</h2>
+            <h2 style={{ color: "#58180D", borderBottom: "2px solid #58180D", margin: "0 0 4px 0", paddingBottom: "4px" }}>{monster.name || "Unknown Monster"}</h2>
             <div style={{ fontStyle: "italic", marginBottom: "8px" }}>
-                {monster.size?.charAt(0) || ""} {monster.type?.type || monster.type}{alignText ? `, ${alignText}` : ""}
+                {monster.size || "?"} {monsterType || "Unknown Type"}{alignText ? `, ${alignText}` : ""}
             </div>
             <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
             <p style={{ margin: "4px 0" }}><strong>Armor Class</strong>: {acText}</p>
-            <p style={{ margin: "4px 0" }}><strong>Hit Points</strong>: {monster.hp?.average || 10} {monster.hp?.formula ? `(${monster.hp.formula})` : ""}</p>
+            <p style={{ margin: "4px 0" }}><strong>Hit Points</strong>: {monster.hp?.average || monster.hp || "??"} {monster.hp?.formula ? `(${monster.hp.formula})` : ""}</p>
             <p style={{ margin: "4px 0" }}><strong>Speed</strong>: {speedText}</p>
             <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
 

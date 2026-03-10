@@ -46,14 +46,17 @@ export default function ImportPopover() {
                 const metadata = item.metadata as any;
                 metadata[BUBBLES_METADATA_KEY] = {
                     ...(metadata[BUBBLES_METADATA_KEY] || {}),
-                    health: hp,
-                    maxHealth: hp,
-                    tempHealth: 0,
-                    armorClass: ac,
-                    hideStats: false
+                    "health": hp,
+                    "max health": hp, // Initial current HP as max HP
+                    "armor class": ac,
+                    "temporary health": 0,
+                    "hide": false
                 };
 
-                console.log("Updated item metadata for token:", tokenId, "Metadata Keys:", Object.keys(item.metadata));
+                // Set name for Stat Bubbles as well
+                metadata["com.owlbear-rodeo-bubbles-extension/name"] = monsterData.name;
+
+                item.metadata = metadata;
             });
 
             // Close the popover automatically after successful import
