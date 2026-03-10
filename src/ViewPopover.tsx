@@ -28,25 +28,62 @@ const renderEntries = (entries: any[]) => {
 
 export default function ViewPopover() {
     const [monster, setMonster] = useState<any>(null);
+    const [error, setError] = useState<string>("");
 
     useEffect(() => {
-        const fetchMonsterData = async () => {
-            if (await OBR.isReady) {
-                const urlParams = new URLSearchParams(window.location.hash.split("?")[1]);
-                const tokenId = urlParams.get("id");
-                if (tokenId) {
-                    const items = await OBR.scene.items.getItems([tokenId]);
-                    if (items.length > 0) {
-                        setMonster(items[0].metadata[METADATA_KEY]);
+        const initView = async () => {
+            console.log("ViewPopover: Initializing...");
+            OBR.onReady(async () => {
+                try {
+                    console.log("ViewPopover: OBR Ready");
+                    const hashParts = window.location.hash.split("?");
+                    const query = hashParts.length > 1 ? hashParts[1] : "";
+                    const urlParams = new URLSearchParams(query);
+                    const tokenId = urlParams.get("id");
+
+                    console.log("ViewPopover: Hash:", window.location.hash);
+                    console.log("ViewPopover: Token ID from hash:", tokenId);
+
+                    if (!tokenId) {
+                        setError("No token ID provided in the URL.");
+                        return;
                     }
+
+                    const items = await OBR.scene.items.getItems([tokenId]);
+                    console.log("ViewPopover: Fetched items from scene:", items.length);
+
+                    if (items.length === 0) {
+                        setError(`Token not found in the current scene. (ID: ${tokenId})`);
+                        return;
+                    }
+
+                    const monsterMetadata = items[0].metadata[METADATA_KEY];
+                    console.log("ViewPopover: Monster metadata present:", !!monsterMetadata);
+
+                    if (!monsterMetadata) {
+                        console.log("ViewPopover: Full metadata keys:", Object.keys(items[0].metadata));
+                        setError("No monster data found on this token. Try re-importing.");
+                        return;
+                    }
+
+                    setMonster(monsterMetadata);
+                } catch (err: any) {
+                    console.error("ViewPopover: Error during initialization:", err);
+                    setError(`Failed to load: ${err.message}`);
                 }
-            }
+            });
         };
-        fetchMonsterData();
+        initView();
     }, []);
 
+    if (error) {
+        return <div style={{ padding: "16px", fontFamily: "sans-serif", color: "#721c24", background: "#f8d7da", border: "1px solid #f5c6cb", borderRadius: "4px" }}>
+            <strong>Error:</strong> {error}
+        </div>;
+    }
+
     if (!monster) {
-        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading or no monster data found...</div>;
+        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.0.6)...</div>;
     }
 
     const speedText = monster.speed

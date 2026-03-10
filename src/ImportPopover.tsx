@@ -1,6 +1,6 @@
 import { useState } from "react";
 import OBR from "@owlbear-rodeo/sdk";
-import { EXTENSION_ID, METADATA_KEY } from "./Background";
+import { EXTENSION_ID, METADATA_KEY, BUBBLES_METADATA_KEY } from "./Background";
 import { fetchMonsterData, extractAC, extractHP } from "./api";
 
 export default function ImportPopover() {
@@ -11,9 +11,10 @@ export default function ImportPopover() {
     const handleImport = async () => {
         setLoading(true);
         setError("");
+        console.log("Starting import for URL:", url);
 
         try {
-            const urlParams = new URLSearchParams(window.location.hash.split("?")[1]);
+            const urlParams = new URLSearchParams(window.location.hash.split("?")[1] || "");
             const tokenId = urlParams.get("id");
 
             if (!tokenId) {
@@ -24,8 +25,12 @@ export default function ImportPopover() {
             const hp = extractHP(monsterData);
             const ac = extractAC(monsterData);
 
+            console.log("Fetched monster data:", monsterData.name, "HP:", hp, "AC:", ac);
+
             await OBR.scene.items.updateItems([tokenId], (items) => {
                 const item = items[0];
+                if (!item) return;
+
                 item.name = monsterData.name;
 
                 // Owlbear Rodeo standard text attachment for Token stats
@@ -36,6 +41,17 @@ export default function ImportPopover() {
                 imgItem.text.plainText = `${monsterData.name}\nHP: ${hp} | AC: ${ac}`;
 
                 item.metadata[METADATA_KEY] = monsterData;
+
+                // Stat Bubbles Extension Integration
+                const metadata = item.metadata as any;
+                metadata[BUBBLES_METADATA_KEY] = {
+                    ...(metadata[BUBBLES_METADATA_KEY] || {}),
+                    hp: hp,
+                    maxHp: hp,
+                    ac: ac
+                };
+
+                console.log("Updated item metadata for token:", tokenId, "Metadata Keys:", Object.keys(item.metadata));
             });
 
             // Close the popover automatically after successful import

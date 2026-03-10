@@ -2,6 +2,7 @@ import OBR from "@owlbear-rodeo/sdk";
 
 export const EXTENSION_ID = "com.ajuszt95.5etools";
 export const METADATA_KEY = `${EXTENSION_ID}/monster`;
+export const BUBBLES_METADATA_KEY = "com.bubbles";
 
 export function initBackground() {
     console.log("Initializing background script...");
