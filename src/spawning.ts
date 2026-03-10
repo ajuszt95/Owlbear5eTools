@@ -11,14 +11,22 @@ export async function spawnMonster(url: string) {
     const hp = extractHP(monster);
     const ac = extractAC(monster);
     const { multiplier } = getMonsterDimensions(monster.size);
+    const gridDpi = await OBR.scene.grid.getDpi();
 
     // Get the center of the current screen in world coordinates
     const width = await OBR.viewport.getWidth();
     const height = await OBR.viewport.getHeight();
-    const center = await OBR.viewport.inverseTransformPoint({ x: width / 2, y: height / 2 });
+    const viewCenter = await OBR.viewport.inverseTransformPoint({ x: width / 2, y: height / 2 });
 
     // Constants for internal image resolution
     const BASE_RESOLUTION = 300;
+
+    // Calculate top-left based on world size to ensure it's centered
+    const worldSize = multiplier * gridDpi;
+    const topLeft = {
+        x: viewCenter.x - worldSize / 2,
+        y: viewCenter.y - worldSize / 2
+    };
 
     const imageItem = buildImage(
         {
@@ -28,15 +36,14 @@ export async function spawnMonster(url: string) {
             height: BASE_RESOLUTION,
         },
         {
-            // OBR scale is SceneDPI / ItemDPI. 
-            // To make an item X units wide: ItemDPI = SceneDPI / X.
-            // But since OBR items are anchored Top-Left by default, 
-            // using an offset of Half-Width/Half-Height anchors it at the Center.
-            dpi: BASE_RESOLUTION / multiplier,
-            offset: { x: BASE_RESOLUTION / 2, y: BASE_RESOLUTION / 2 }
+            // dpi = pixels per grid unit. 
+            // Setting it to the same as BASE_RESOLUTION makes the base size 1x1.
+            dpi: BASE_RESOLUTION,
+            offset: { x: 0, y: 0 }
         }
     )
-        .position(center)
+        .position(topLeft)
+        .scale({ x: multiplier, y: multiplier })
         .layer("CHARACTER")
         .name(monster.name)
         .metadata({

@@ -110,7 +110,7 @@ export default function ViewPopover() {
     }
 
     if (!monster) {
-        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.1.2)...</div>;
+        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.1.3)...</div>;
     }
 
     let speedText = "30ft.";
