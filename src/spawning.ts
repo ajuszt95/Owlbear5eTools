@@ -28,22 +28,25 @@ export async function spawnMonster(url: string) {
         y: viewCenter.y - worldSize / 2
     };
 
+    // Calculate DPI based on multiplier to achieve target grid size without using .scale()
+    // Formula: units = pixels / dpi  =>  dpi = pixels / multiplier
+    const itemDpi = BASE_RESOLUTION / multiplier;
+
     const imageItem = buildImage(
         {
-            url: monster.tokenUrl || "https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/token/blank.png",
+            url: monster.tokenUrl || "https://5e.tools/img/token/blank.png",
             mime: "image/png",
             width: BASE_RESOLUTION,
             height: BASE_RESOLUTION,
         },
         {
-            // dpi = pixels per grid unit. 
-            // Setting it to the same as BASE_RESOLUTION makes the base size 1x1.
-            dpi: BASE_RESOLUTION,
+            dpi: itemDpi,
             offset: { x: 0, y: 0 }
         }
     )
         .position(topLeft)
-        .scale({ x: multiplier, y: multiplier })
+        // We remove .scale() because it breaks compatibility with extensions like Stat Bubbles
+        // Instead, we drive the size purely via the 'dpi' property above.
         .layer("CHARACTER")
         .name(monster.name)
         .metadata({
