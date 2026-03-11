@@ -8,21 +8,49 @@ const renderEntries = (entries: any[]) => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
         if (typeof e === 'string') {
-            return <p key={i} style={{ margin: "4px 0" }}>{render5etoolsText(e)}</p>;
+            return <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>{render5etoolsText(e)}</p>;
         }
         if (e.name && e.entries) {
             return (
                 <div key={i} style={{ marginBottom: "8px" }}>
-                    <strong>{e.name}. </strong>
+                    <strong>{render5etoolsText(e.name)}. </strong>
                     <span style={{ display: "inline" }}>{renderEntries(e.entries)}</span>
                 </div>
             );
         }
         if (e.type === 'list') {
-            return <ul key={i} style={{ margin: "4px 0", paddingLeft: "20px" }}>{e.items.map((it: any, j: number) => <li key={j}>{renderEntries([it])}</li>)}</ul>;
+            return <ul key={i} style={{ margin: "4px 0", paddingLeft: "18px" }}>{e.items.map((it: any, j: number) => <li key={j} style={{ marginBottom: "2px" }}>{renderEntries([it])}</li>)}</ul>;
         }
         return null;
     });
+};
+
+const getModifier = (score: number) => {
+    const mod = Math.floor((score - 10) / 2);
+    return mod >= 0 ? `+${mod}` : `${mod}`;
+};
+
+const AbilityTable = ({ monster }: { monster: any }) => {
+    const abilities = ["str", "dex", "con", "int", "wis", "cha"];
+    return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", textAlign: "center", borderTop: "1px solid #58180D", borderBottom: "1px solid #58180D", padding: "8px 0", margin: "8px 0" }}>
+            {abilities.map(ab => (
+                <div key={ab}>
+                    <div style={{ fontWeight: "bold", textTransform: "uppercase", fontSize: "11px", color: "#58180D" }}>{ab}</div>
+                    <div style={{ fontSize: "14px" }}>{monster[ab] || 10} ({getModifier(monster[ab] || 10)})</div>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+const MetadataLine = ({ label, value }: { label: string, value: any }) => {
+    if (!value || (Array.isArray(value) && value.length === 0)) return null;
+    return (
+        <p style={{ margin: "2px 0", fontSize: "13px" }}>
+            <strong style={{ color: "#58180D" }}>{label}</strong> {value}
+        </p>
+    );
 };
 
 export default function ViewPopover() {
@@ -32,44 +60,33 @@ export default function ViewPopover() {
 
     useEffect(() => {
         const initView = async () => {
-            console.log("ViewPopover: Initializing...");
             OBR.onReady(async () => {
                 try {
-                    console.log("ViewPopover: OBR Ready");
                     const hashParts = window.location.hash.split("?");
                     const query = hashParts.length > 1 ? hashParts[1] : "";
                     const urlParams = new URLSearchParams(query);
                     const tid = urlParams.get("id");
 
-                    console.log("ViewPopover: Hash:", window.location.hash);
-                    console.log("ViewPopover: Token ID from hash:", tid);
-
                     if (!tid) {
-                        setError("No token ID provided in the URL.");
+                        setError("No token ID provided.");
                         return;
                     }
                     setTokenId(tid);
 
                     const items = await OBR.scene.items.getItems([tid]);
-                    console.log("ViewPopover: Fetched items from scene:", items.length);
-
                     if (items.length === 0) {
-                        setError(`Token not found in the current scene. (ID: ${tid})`);
+                        setError("Token not found.");
                         return;
                     }
 
                     const monsterMetadata = items[0].metadata[METADATA_KEY];
-                    console.log("ViewPopover: Monster metadata present:", !!monsterMetadata);
-
                     if (!monsterMetadata) {
-                        console.log("ViewPopover: Full metadata keys:", Object.keys(items[0].metadata));
-                        setError("No monster data found on this token. Try re-importing.");
+                        setError("No data found. Try re-importing.");
                         return;
                     }
 
                     setMonster(monsterMetadata);
                 } catch (err: any) {
-                    console.error("ViewPopover: Error during initialization:", err);
                     setError(`Failed to load: ${err.message}`);
                 }
             });
@@ -83,132 +100,108 @@ export default function ViewPopover() {
             await OBR.scene.items.updateItems([tokenId], (items) => {
                 const item = items[0];
                 if (!item) return;
-
-                // Clear monster metadata
                 delete item.metadata[METADATA_KEY];
-
-                // Clear Stat Bubbles metadata
                 delete item.metadata[BUBBLES_METADATA_KEY];
                 delete item.metadata["com.owlbear-rodeo-bubbles-extension/name"];
-
-                // Reset name
                 item.name = "Token";
             });
-            console.log("Statblock removed from token:", tokenId);
             await OBR.popover.close(`${EXTENSION_ID}/view-popover`);
         } catch (err: any) {
-            console.error("Failed to remove statblock:", err);
             setError(`Failed to remove: ${err.message}`);
         }
     };
 
     if (error) {
-        return <div style={{ padding: "16px", fontFamily: "sans-serif", color: "#721c24", background: "#f8d7da", border: "1px solid #f5c6cb", borderRadius: "4px" }}>
+        return <div style={{ padding: "16px", color: "#800", background: "#fee", border: "1px solid #fcc", borderRadius: "8px" }}>
             <strong>Error:</strong> {error}
         </div>;
     }
 
     if (!monster) {
-        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.2.2)...</div>;
+        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.2.3)...</div>;
     }
 
-    let speedText = "30ft.";
-    try {
-        if (monster.speed && typeof monster.speed === 'object') {
-            speedText = Object.entries(monster.speed)
-                .map(([k, v]) => `${k} ${(v as any)?.number || v}ft.`)
-                .join(", ");
-        } else if (typeof monster.speed === 'string') {
-            speedText = monster.speed;
-        }
-    } catch (e) {
-        console.warn("Error parsing speed:", e);
-    }
+    // Helper expansions
+    const sizeMap: any = { "T": "Tiny", "S": "Small", "M": "Medium", "L": "Large", "H": "Huge", "G": "Gargantuan" };
+    const displaySize = sizeMap[monster.size?.[0]] || monster.size?.[0] || "Medium";
+    const typeText = typeof monster.type === 'string' ? monster.type : (monster.type?.type || "creature");
+    const alignText = monster.alignment ? (Array.isArray(monster.alignment) ? monster.alignment.join(", ") : monster.alignment.toString()) : "unaligned";
 
-    let acText = "10";
-    try {
-        if (Array.isArray(monster.ac)) {
-            acText = monster.ac.map((a: any) => (typeof a === 'object' ? (a.ac || a.xml || "??") : a)).join(", ");
-        } else if (monster.ac) {
-            acText = monster.ac.toString();
-        }
-    } catch (e) {
-        console.warn("Error parsing AC:", e);
-    }
+    const acText = Array.isArray(monster.ac) 
+        ? monster.ac.map((a: any) => typeof a === 'object' ? `${a.ac}${a.from ? ` (${a.from.join(", ")})` : ""}` : a).join(", ")
+        : (monster.ac || "10");
 
-    let alignText = "";
-    try {
-        if (Array.isArray(monster.alignment)) {
-            alignText = monster.alignment.join(", ");
-        } else if (monster.alignment) {
-            alignText = monster.alignment.toString();
-        }
-    } catch (e) {
-        console.warn("Error parsing alignment:", e);
-    }
+    const hpText = `${monster.hp?.average || "??"} ${monster.hp?.formula ? `(${monster.hp.formula})` : ""}`;
+    
+    const speedText = typeof monster.speed === 'string' ? monster.speed : Object.entries(monster.speed || {}).map(([k, v]) => `${k} ${typeof v === 'object' ? (v as any).number : v}ft.`).join(", ");
 
-    const monsterType = typeof monster.type === 'object' ? (monster.type.type || JSON.stringify(monster.type)) : monster.type;
+    const saves = monster.save ? Object.entries(monster.save).map(([k, v]) => `${k.toUpperCase()} ${v}`).join(", ") : null;
+    const skills = monster.skill ? Object.entries(monster.skill).map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)} ${v}`).join(", ") : null;
+    const senses = monster.senses ? (Array.isArray(monster.senses) ? monster.senses.join(", ") : monster.senses) : null;
+    const passivePerception = monster.passive || (skills?.toLowerCase().includes("perception") ? monster.skill.perception + 10 : 10);
+
+    const crText = typeof monster.cr === 'string' ? monster.cr : (monster.cr?.cr || monster.cr);
 
     return (
-        <div style={{ padding: "16px", fontFamily: "sans-serif", color: "#333", background: "#fdf5e6", minHeight: "100vh" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #58180D", marginBottom: "4px", paddingBottom: "4px" }}>
-                <h2 style={{ color: "#58180D", margin: 0 }}>
+        <div style={{ padding: "20px", fontFamily: "'Inter', sans-serif", color: "#333", background: "#fdf5e6", minHeight: "100vh", lineHeight: "1.5" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "3px solid #58180D", marginBottom: "8px", paddingBottom: "4px" }}>
+                <h2 style={{ color: "#58180D", margin: 0, fontSize: "22px" }}>
                     {monster.sourceUrl ? (
-                        <a 
-                            href={monster.sourceUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            style={{ color: "#58180D", textDecoration: "none", borderBottom: "1px solid transparent", transition: "border-color 0.2s" }}
-                            onMouseOver={(e) => e.currentTarget.style.borderBottom = "1px solid #58180D"}
-                            onMouseOut={(e) => e.currentTarget.style.borderBottom = "1px solid transparent"}
-                        >
-                            {monster.name || "Unknown Monster"}
-                        </a>
+                        <a href={monster.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "none" }}>{monster.name}</a>
                     ) : (
-                        monster.name || "Unknown Monster"
+                        monster.name
                     )}
                 </h2>
-                <button
-                    onClick={handleRemove}
-                    style={{
-                        padding: "4px 8px",
-                        fontSize: "12px",
-                        cursor: "pointer",
-                        background: "#800",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "4px"
-                    }}
-                >
-                    Remove Statblock
-                </button>
+                <button onClick={handleRemove} style={{ padding: "4px 8px", fontSize: "11px", background: "#800", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Remove</button>
             </div>
-            <div style={{ fontStyle: "italic", marginBottom: "8px" }}>
-                {monster.size || "?"} {monsterType || "Unknown Type"}{alignText ? `, ${alignText}` : ""}
+
+            <div style={{ fontStyle: "italic", fontSize: "14px", marginBottom: "8px" }}>
+                {displaySize} {typeText}, {alignText}
             </div>
-            <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
-            <p style={{ margin: "4px 0" }}><strong>Armor Class</strong>: {acText}</p>
-            <p style={{ margin: "4px 0" }}><strong>Hit Points</strong>: {monster.hp?.average || monster.hp || "??"} {monster.hp?.formula ? `(${monster.hp.formula})` : ""}</p>
-            <p style={{ margin: "4px 0" }}><strong>Speed</strong>: {speedText}</p>
+
             <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
 
-            {monster.trait && (
-                <div style={{ marginBottom: "16px" }}>
-                    {renderEntries(monster.trait)}
-                </div>
-            )}
+            <MetadataLine label="Armor Class" value={`${acText}`} />
+            <MetadataLine label="Hit Points" value={hpText} />
+            <MetadataLine label="Speed" value={speedText} />
+
+            <AbilityTable monster={monster} />
+
+            <div style={{ marginBottom: "8px" }}>
+                <MetadataLine label="Saving Throws" value={saves} />
+                <MetadataLine label="Skills" value={skills} />
+                <MetadataLine label="Senses" value={`${senses ? senses + ", " : ""}passive Perception ${passivePerception}`} />
+                <MetadataLine label="Languages" value={Array.isArray(monster.languages) ? monster.languages.join(", ") : monster.languages} />
+                <MetadataLine label="Challenge" value={`${crText} (${monster.cr?.xp || "??"} XP)`} />
+            </div>
+
+            <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
+
+            {monster.trait && <div style={{ marginBottom: "12px" }}>{renderEntries(monster.trait)}</div>}
 
             {monster.action && (
-                <div style={{ marginBottom: "16px" }}>
-                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", marginBottom: "8px" }}>Actions</h3>
+                <div style={{ marginBottom: "12px" }}>
+                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Actions</h3>
                     {renderEntries(monster.action)}
                 </div>
             )}
 
             {monster.legendary && (
-                <div style={{ marginBottom: "16px" }}>
-                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", marginBottom: "8px" }}>Legendary Actions</h3>
+                <div style={{ marginBottom: "12px" }}>
+                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Legendary Actions</h3>
+                    {monster.legendaryGroup?.name && (
+                        <p style={{ fontStyle: "italic", fontSize: "13px", marginBottom: "8px" }}>
+                            The {monster.name} can take 3 legendary actions...
+                        </p>
+                    )}
                     {renderEntries(monster.legendary)}
+                </div>
+            )}
+
+            {monster.lairActions && (
+                <div style={{ marginBottom: "12px" }}>
+                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Lair Actions</h3>
+                    {renderEntries(monster.lairActions)}
                 </div>
             )}
         </div>
