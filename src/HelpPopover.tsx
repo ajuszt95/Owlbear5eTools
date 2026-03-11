@@ -1,5 +1,4 @@
 import { useState } from "react";
-import OBR from "@owlbear-rodeo/sdk";
 import { fetchMonsterData } from "./api";
 import { spawnMonster } from "./spawning";
 
