@@ -5,6 +5,7 @@ export interface Monster {
     ac?: Array<number | { ac: number }>;
     size?: string[]; // e.g. ["M"]
     tokenUrl?: string; // Resolved GitHub Mirror URL
+    sourceUrl?: string; // Original 5e.tools URL
     [key: string]: any; // full stat block
 }
 
@@ -129,6 +130,9 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
         if (foundMonster.hasToken || foundMonster.tokenUrl === undefined) {
             foundMonster.tokenUrl = calculateTokenUrl(foundMonster.name, foundMonster.source);
         }
+
+        // Store original source URL for hyperlink support
+        foundMonster.sourceUrl = url;
 
         return foundMonster;
     } catch (err: any) {

@@ -62,7 +62,7 @@ export default function HelpPopover() {
                     DM Toolbox
                 </h2>
                 <p style={{ margin: "4px 0 0 0", color: "#888", fontSize: "14px", fontWeight: 500 }}>
-                    5e.tools Integration v1.2.1
+                    5e.tools Integration v1.2.2
                 </p>
             </header>
 
@@ -175,7 +175,7 @@ export default function HelpPopover() {
                 justifyContent: "space-between"
             }}>
                 <span>Created by ajuszt95</span>
-                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.2.1</span>
+                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.2.2</span>
             </footer>
         </div>
     );

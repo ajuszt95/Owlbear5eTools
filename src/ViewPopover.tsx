@@ -109,7 +109,7 @@ export default function ViewPopover() {
     }
 
     if (!monster) {
-        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.2.1)...</div>;
+        return <div style={{ padding: "16px", fontFamily: "sans-serif" }}>Loading monster data (v1.2.2)...</div>;
     }
 
     let speedText = "30ft.";
@@ -152,7 +152,22 @@ export default function ViewPopover() {
     return (
         <div style={{ padding: "16px", fontFamily: "sans-serif", color: "#333", background: "#fdf5e6", minHeight: "100vh" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #58180D", marginBottom: "4px", paddingBottom: "4px" }}>
-                <h2 style={{ color: "#58180D", margin: 0 }}>{monster.name || "Unknown Monster"}</h2>
+                <h2 style={{ color: "#58180D", margin: 0 }}>
+                    {monster.sourceUrl ? (
+                        <a 
+                            href={monster.sourceUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ color: "#58180D", textDecoration: "none", borderBottom: "1px solid transparent", transition: "border-color 0.2s" }}
+                            onMouseOver={(e) => e.currentTarget.style.borderBottom = "1px solid #58180D"}
+                            onMouseOut={(e) => e.currentTarget.style.borderBottom = "1px solid transparent"}
+                        >
+                            {monster.name || "Unknown Monster"}
+                        </a>
+                    ) : (
+                        monster.name || "Unknown Monster"
+                    )}
+                </h2>
                 <button
                     onClick={handleRemove}
                     style={{
