@@ -1,21 +1,20 @@
 import { useEffect, useState } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID } from "./Background";
+import { render5etoolsText } from "./utils/renderer";
 
 // Helper to render 5e.tools entries safely
 const renderEntries = (entries: any[]) => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
         if (typeof e === 'string') {
-            // Simplify 5e.tools notation like {@dice 1d6} -> 1d6
-            const text = e.replace(/{@\w+ ([^}]+)}/g, "$1");
-            return <p key={i} style={{ margin: "4px 0" }}>{text}</p>;
+            return <p key={i} style={{ margin: "4px 0" }}>{render5etoolsText(e)}</p>;
         }
         if (e.name && e.entries) {
             return (
                 <div key={i} style={{ marginBottom: "8px" }}>
                     <strong>{e.name}. </strong>
-                    {renderEntries(e.entries)}
+                    <span style={{ display: "inline" }}>{renderEntries(e.entries)}</span>
                 </div>
             );
         }

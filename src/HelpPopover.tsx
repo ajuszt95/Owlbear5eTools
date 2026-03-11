@@ -62,7 +62,7 @@ export default function HelpPopover() {
                     DM Toolbox
                 </h2>
                 <p style={{ margin: "4px 0 0 0", color: "#888", fontSize: "14px", fontWeight: 500 }}>
-                    5e.tools Integration v1.2.0
+                    5e.tools Integration v1.2.1
                 </p>
             </header>
 
@@ -79,6 +79,15 @@ export default function HelpPopover() {
                 <p style={{ fontSize: "13px", color: "#666", marginBottom: "16px" }}>
                     Spawn a new token directly from a 5e.tools Bestiary URL.
                 </p>
+
+                <div style={{ background: "#f8f9fa", padding: "12px", borderRadius: "8px", fontSize: "12px", color: "#666", marginBottom: "16px", borderLeft: "4px solid #58180D" }}>
+                    <strong>Supported Links:</strong>
+                    <ul style={{ margin: "6px 0 0 0", paddingLeft: "18px", lineHeight: "1.4" }}>
+                        <li>Standard: <code>bestiary.html#monster_source</code></li>
+                        <li>Direct: <code>bestiary/monster-source.html</code></li>
+                        <li>Advanced: <code>index.html?page=bestiary...&hash=monster_source</code></li>
+                    </ul>
+                </div>
 
                 <div style={{ display: "flex", gap: "8px", flexDirection: "column" }}>
                     <input
@@ -166,7 +175,7 @@ export default function HelpPopover() {
                 justifyContent: "space-between"
             }}>
                 <span>Created by ajuszt95</span>
-                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.1.0</span>
+                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.2.1</span>
             </footer>
         </div>
     );
