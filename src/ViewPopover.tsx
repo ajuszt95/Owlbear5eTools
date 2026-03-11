@@ -117,15 +117,119 @@ export default function ViewPopover() {
         </div>;
     }
 
+const renderSpellcasting = (spellcasting: any[]) => {
+    if (!spellcasting || !Array.isArray(spellcasting)) return null;
+    return spellcasting.map((s, i) => (
+        <div key={i} style={{ marginBottom: "12px", fontSize: "13px" }}>
+            <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
+                {s.name || "Spellcasting"}
+            </h3>
+            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries)}</div>}
+            
+            {s.will && (
+                <p style={{ margin: "4px 0" }}>
+                    <strong>At will: </strong>{s.will.map((sp: any) => render5etoolsText(typeof sp === 'string' ? sp : sp.entry)).join(", ")}
+                </p>
+            )}
+
+            {s.daily && Object.entries(s.daily).map(([k, v]: [string, any]) => (
+                <p key={k} style={{ margin: "4px 0" }}>
+                    <strong>{k.replace('e', '/day each')}: </strong>
+                    {v.map((sp: any) => render5etoolsText(typeof sp === 'string' ? sp : sp.entry)).join(", ")}
+                </p>
+            ))}
+
+            {s.spells && Object.entries(s.spells).map(([level, data]: [string, any]) => (
+                <p key={level} style={{ margin: "4px 0" }}>
+                    <strong>{level === '0' ? 'Cantrips (at will)' : `Level ${level} (${data.slots || 0} slots)`}: </strong>
+                    {data.spells.map((sp: any) => render5etoolsText(typeof sp === 'string' ? sp : sp.entry)).join(", ")}
+                </p>
+            ))}
+
+            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries)}</div>}
+        </div>
+    ));
+};
+
+export default function ViewPopover() {
+    const [monster, setMonster] = useState<any>(null);
+    const [tokenId, setTokenId] = useState<string | null>(null);
+    const [error, setError] = useState<string>("");
+
+    useEffect(() => {
+        const initView = async () => {
+            OBR.onReady(async () => {
+                try {
+                    const hashParts = window.location.hash.split("?");
+                    const query = hashParts.length > 1 ? hashParts[1] : "";
+                    const urlParams = new URLSearchParams(query);
+                    const tid = urlParams.get("id");
+
+                    if (!tid) {
+                        setError("No token ID provided.");
+                        return;
+                    }
+                    setTokenId(tid);
+
+                    const items = await OBR.scene.items.getItems([tid]);
+                    if (items.length === 0) {
+                        setError("Token not found.");
+                        return;
+                    }
+
+                    const monsterMetadata = items[0].metadata[METADATA_KEY];
+                    if (!monsterMetadata) {
+                        setError("No data found. Try re-importing.");
+                        return;
+                    }
+
+                    setMonster(monsterMetadata);
+                } catch (err: any) {
+                    setError(`Failed to load: ${err.message}`);
+                }
+            });
+        };
+        initView();
+    }, []);
+
+    const handleRemove = async () => {
+        if (!tokenId) return;
+        try {
+            await OBR.scene.items.updateItems([tokenId], (items) => {
+                const item = items[0];
+                if (!item) return;
+                delete item.metadata[METADATA_KEY];
+                delete item.metadata[BUBBLES_METADATA_KEY];
+                delete item.metadata["com.owlbear-rodeo-bubbles-extension/name"];
+                item.name = "Token";
+            });
+            await OBR.popover.close(`${EXTENSION_ID}/view-popover`);
+        } catch (err: any) {
+            setError(`Failed to remove: ${err.message}`);
+        }
+    };
+
+    if (error) {
+        return <div style={{ padding: "16px", color: "#800", background: "#fee", border: "1px solid #fcc", borderRadius: "8px" }}>
+            <strong>Error:</strong> {error}
+        </div>;
+    }
+
     if (!monster) {
-        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.2.3)...</div>;
+        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.2.4)...</div>;
     }
 
     // Helper expansions
     const sizeMap: any = { "T": "Tiny", "S": "Small", "M": "Medium", "L": "Large", "H": "Huge", "G": "Gargantuan" };
     const displaySize = sizeMap[monster.size?.[0]] || monster.size?.[0] || "Medium";
     const typeText = typeof monster.type === 'string' ? monster.type : (monster.type?.type || "creature");
-    const alignText = monster.alignment ? (Array.isArray(monster.alignment) ? monster.alignment.join(", ") : monster.alignment.toString()) : "unaligned";
+    
+    // Clean up alignment (remove tags, handle objects)
+    const alignText = monster.alignment 
+        ? (Array.isArray(monster.alignment) 
+            ? monster.alignment.map((a: any) => typeof a === 'string' ? a : (a.alignment || JSON.stringify(a))).join(", ") 
+            : monster.alignment.toString())
+        : null;
 
     const acText = Array.isArray(monster.ac) 
         ? monster.ac.map((a: any) => typeof a === 'object' ? `${a.ac}${a.from ? ` (${a.from.join(", ")})` : ""}` : a).join(", ")
@@ -141,6 +245,7 @@ export default function ViewPopover() {
     const passivePerception = monster.passive || (skills?.toLowerCase().includes("perception") ? monster.skill.perception + 10 : 10);
 
     const crText = typeof monster.cr === 'string' ? monster.cr : (monster.cr?.cr || monster.cr);
+    const xpText = monster.cr?.xp ? ` (${monster.cr.xp} XP)` : "";
 
     return (
         <div style={{ padding: "20px", fontFamily: "'Inter', sans-serif", color: "#333", background: "#fdf5e6", minHeight: "100vh", lineHeight: "1.5" }}>
@@ -156,7 +261,7 @@ export default function ViewPopover() {
             </div>
 
             <div style={{ fontStyle: "italic", fontSize: "14px", marginBottom: "8px" }}>
-                {displaySize} {typeText}, {alignText}
+                {displaySize} {typeText}{alignText ? `, ${alignText}` : ""}
             </div>
 
             <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
@@ -172,17 +277,33 @@ export default function ViewPopover() {
                 <MetadataLine label="Skills" value={skills} />
                 <MetadataLine label="Senses" value={`${senses ? senses + ", " : ""}passive Perception ${passivePerception}`} />
                 <MetadataLine label="Languages" value={Array.isArray(monster.languages) ? monster.languages.join(", ") : monster.languages} />
-                <MetadataLine label="Challenge" value={`${crText} (${monster.cr?.xp || "??"} XP)`} />
+                <MetadataLine label="Challenge" value={`${crText}${xpText}`} />
             </div>
 
             <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
 
             {monster.trait && <div style={{ marginBottom: "12px" }}>{renderEntries(monster.trait)}</div>}
 
+            {monster.spellcasting && renderSpellcasting(monster.spellcasting)}
+
             {monster.action && (
                 <div style={{ marginBottom: "12px" }}>
                     <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Actions</h3>
                     {renderEntries(monster.action)}
+                </div>
+            )}
+
+            {monster.bonus && (
+                <div style={{ marginBottom: "12px" }}>
+                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Bonus Actions</h3>
+                    {renderEntries(monster.bonus)}
+                </div>
+            )}
+
+            {monster.reaction && (
+                <div style={{ marginBottom: "12px" }}>
+                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Reactions</h3>
+                    {renderEntries(monster.reaction)}
                 </div>
             )}
 
