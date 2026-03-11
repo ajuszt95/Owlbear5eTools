@@ -62,7 +62,7 @@ export default function HelpPopover() {
                     DM Toolbox
                 </h2>
                 <p style={{ margin: "4px 0 0 0", color: "#888", fontSize: "14px", fontWeight: 500 }}>
-                    5e.tools Integration v1.1.6
+                    5e.tools Integration v1.2.0
                 </p>
             </header>
 

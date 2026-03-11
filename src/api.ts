@@ -46,26 +46,46 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
 
     try {
         const urlObj = new URL(url);
+        const searchParams = urlObj.searchParams;
 
-        // 1. Check for standard hash format: https://5e.tools/bestiary.html#aarakocra_lox
-        if (urlObj.hash && urlObj.hash.includes("_")) {
+        // 1. Check for Query Params (New in v1.2.0)
+        // Format: index.html?source=WhereEvilLives&hash=abyssal%2520hyena_whereevillives
+        if (searchParams.has("hash")) {
+            // 5e.tools often double-encodes the hash param (e.g. %2520 for space)
+            let rawHash = searchParams.get("hash") || "";
+            // Decode twice to handle %25 -> % -> space
+            let decodedHash = decodeURIComponent(decodeURIComponent(rawHash));
+            
+            if (decodedHash.includes("_")) {
+                const parts = decodedHash.split("_");
+                source = searchParams.get("source") || parts.pop() || "";
+                nameIdentifier = parts.join("_");
+            } else {
+                nameIdentifier = decodedHash;
+                source = searchParams.get("source") || "";
+            }
+        }
+        // 2. Fallback to standard hash format: bestiary.html#aarakocra_lox
+        else if (urlObj.hash && urlObj.hash.includes("_")) {
             const hashParts = urlObj.hash.substring(1).split("_"); // remove leading #
             source = hashParts.pop() || "";
             nameIdentifier = hashParts.join("_");
         }
-        // 2. Check for path format: https://5e.tools/bestiary/aarakocra-spelljammer-lox.html
-        else if (urlObj.pathname.includes(".html")) {
+        // 3. Fallback to path format: https://5e.tools/bestiary/aarakocra-spelljammer-lox.html
+        else if (urlObj.pathname.includes(".html") && urlObj.pathname.includes("/")) {
             const pathPart = urlObj.pathname.split("/").pop() || "";
             const nameWithoutExt = pathPart.replace(".html", "");
+            
+            // The path format often uses dashes instead of underscores
             const pathParts = nameWithoutExt.split("-");
-            source = pathParts.pop() || "";
-            nameIdentifier = pathParts.join("-");
-        } else {
-            throw new Error("Invalid 5e.tools URL format. Expected a hash (#name_source) or specific path.");
+            if (pathParts.length >= 2) {
+                source = pathParts.pop() || "";
+                nameIdentifier = pathParts.join("-");
+            }
         }
 
-        if (!source) {
-            throw new Error("Could not extract book source from URL.");
+        if (!source || !nameIdentifier) {
+            throw new Error("Invalid 5e.tools URL format. Could not extract creature name or source book.");
         }
 
         // Fetch the JSON for the specific book
@@ -84,26 +104,29 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
         }
 
         // Find the specific monster
+        // Use a more relaxed sanitizer for external URLs which might have complex characters
         const sanitize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
         const targetNameSanitized = sanitize(nameIdentifier);
 
         let foundMonster = monsterList.find((m) =>
             sanitize(m.name) === targetNameSanitized ||
-            targetNameSanitized.startsWith(sanitize(m.name)) ||
-            sanitize(m.name).startsWith(targetNameSanitized)
+            targetNameSanitized === sanitize(m.name)
         );
 
-        // If exact name matching fails, fallback
+        // Fallback matching if exact sanitized match fails
         if (!foundMonster) {
-            foundMonster = monsterList.find(m => sanitize(m.name).includes(targetNameSanitized.substring(0, 5)));
+            foundMonster = monsterList.find(m => 
+                sanitize(m.name).startsWith(targetNameSanitized) || 
+                targetNameSanitized.startsWith(sanitize(m.name))
+            );
         }
 
         if (!foundMonster) {
-            throw new Error(`Monster matching '${nameIdentifier}' not found in the source book data.`);
+            throw new Error(`Monster matching '${nameIdentifier}' not found in the '${source}' book data.`);
         }
 
         // Attach resolved token URL for the Quick Spawn feature
-        if (foundMonster.hasToken) {
+        if (foundMonster.hasToken || foundMonster.tokenUrl === undefined) {
             foundMonster.tokenUrl = calculateTokenUrl(foundMonster.name, foundMonster.source);
         }
 
