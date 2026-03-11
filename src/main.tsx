@@ -72,7 +72,7 @@ const Root = () => {
 
   return (
     <div style={{ padding: "20px", color: "white", background: "#222", minHeight: "100vh", fontFamily: "sans-serif" }}>
-      <h2>5e Tools Diagnostics (v1.0.15)</h2>
+      <h2>5e Tools Diagnostics (v1.2.1)</h2>
       <p>Current Hash: <code>{hash}</code></p>
       <p>No route matched. This usually happens if the extension was opened in a way it didn't expect.</p>
       <div style={{ marginTop: "20px", fontSize: "12px", opacity: 0.7 }}>
