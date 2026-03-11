@@ -49,18 +49,12 @@ export async function spawnMonster(url: string, itemWidth: number, itemHeight: n
         .metadata({
             [METADATA_KEY]: monster,
             [BUBBLES_METADATA_KEY]: {
-                version: "1.0.0",
-                stats: {
-                    hp: {
-                        value: hp,
-                        max: hp,
-                    },
-                    ac: {
-                        value: ac,
-                    },
-                },
+                "health": hp,
+                "max health": hp,
+                "armor class": ac,
+                "temporary health": 0,
+                "hide": false
             },
-            // Direct Stat Bubbles support
             "com.owlbear-rodeo-bubbles-extension/name": monster.name,
         })
         .build();

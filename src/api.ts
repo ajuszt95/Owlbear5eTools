@@ -31,7 +31,7 @@ export function getMonsterDimensions(size?: string[]): { multiplier: number } {
     // Grid units (multiplier)
     switch (s) {
         case "T": return { multiplier: 0.5 }; // Tiny -> 0.5x0.5
-        case "S": return { multiplier: 1 };   // Small -> 1x1
+        case "S": return { multiplier: 0.8 }; // Small -> 0.8x0.8 (User requested visual distinction)
         case "M": return { multiplier: 1 };   // Medium -> 1x1
         case "L": return { multiplier: 2 };   // Large -> 2x2
         case "H": return { multiplier: 3 };   // Huge -> 3x3
