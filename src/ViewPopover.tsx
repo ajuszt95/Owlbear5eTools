@@ -3,27 +3,373 @@ import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID } from "./Background";
 import { render5etoolsText } from "./utils/renderer";
 
-// Helper to render 5e.tools entries safely
-const renderEntries = (entries: any[]) => {
+// ────────────────────────────────────────────────────────────────────────────
+// Constants & lookup tables
+// ────────────────────────────────────────────────────────────────────────────
+
+const SIZE_MAP: Record<string, string> = {
+    T: "Tiny", S: "Small", M: "Medium", L: "Large", H: "Huge", G: "Gargantuan",
+};
+
+const ALIGNMENT_MAP: Record<string, string> = {
+    L: "Lawful", C: "Chaotic", NX: "Any Non-Lawful", NY: "Any Non-Good",
+    N: "Neutral", G: "Good", E: "Evil",
+    U: "Unaligned", A: "Any alignment",
+};
+
+/** CR → XP lookup per 5e rules */
+const CR_XP: Record<string, string> = {
+    "0": "0", "1/8": "25", "1/4": "50", "1/2": "100",
+    "1": "200", "2": "450", "3": "700", "4": "1,100", "5": "1,800",
+    "6": "2,300", "7": "2,900", "8": "3,900", "9": "5,000", "10": "5,900",
+    "11": "7,200", "12": "8,400", "13": "10,000", "14": "11,500", "15": "13,000",
+    "16": "15,000", "17": "18,000", "18": "20,000", "19": "22,000", "20": "25,000",
+    "21": "33,000", "22": "41,000", "23": "50,000", "24": "62,000", "25": "75,000",
+    "26": "90,000", "27": "105,000", "28": "120,000", "29": "135,000", "30": "155,000",
+};
+
+function getProficiencyBonus(cr: string): string {
+    const n = cr === "1/8" ? 0.125 : cr === "1/4" ? 0.25 : cr === "1/2" ? 0.5 : parseFloat(cr);
+    if (isNaN(n)) return "+2";
+    if (n < 5) return "+2";
+    if (n < 9) return "+3";
+    if (n < 13) return "+4";
+    if (n < 17) return "+5";
+    if (n < 21) return "+6";
+    if (n < 25) return "+7";
+    if (n < 29) return "+8";
+    return "+9";
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Data Formatters
+// ────────────────────────────────────────────────────────────────────────────
+
+function formatAlignment(alignment: any): string {
+    if (!alignment) return "";
+    const codes: string[] = Array.isArray(alignment) ? alignment : [alignment];
+    const decoded = codes.map((a: any) => {
+        if (typeof a === "string") {
+            // "A" alone = Any alignment
+            if (a === "A") return "Any alignment";
+            // "U" = Unaligned
+            if (a === "U") return "Unaligned";
+            // "NX" = any non-lawful, "NY" = any non-good
+            if (a === "NX") return "Any Non-Lawful alignment";
+            if (a === "NY") return "Any Non-Good alignment";
+            return ALIGNMENT_MAP[a] || a;
+        }
+        // Alignment object (e.g. {alignment: ["N","G"], chance: 50})
+        if (typeof a === "object" && a.alignment) {
+            return formatAlignment(a.alignment);
+        }
+        return "";
+    });
+    // Combine: e.g. ["Lawful", "Evil"] → "Lawful Evil"
+    return decoded.filter(Boolean).join(" ");
+}
+
+function formatType(type: any): string {
+    if (!type) return "";
+    if (typeof type === "string") return type;
+    const base: string = type.type || "";
+    const tags: string[] = type.tags || [];
+    if (tags.length === 0) return base;
+    return `${base} (${tags.join(", ")})`;
+}
+
+function formatSpeed(speed: any): string {
+    if (!speed) return "";
+    if (typeof speed === "string") return speed;
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(speed)) {
+        // Skip metadata keys
+        if (k === "canHover") continue;
+        if (v === false) continue;
+        
+        let display = "";
+        if (typeof v === "number") {
+            display = `${v} ft.`;
+        } else if (typeof v === "object") {
+            const obj = v as any;
+            const num = obj.number ?? 0;
+            const cond = obj.condition ? ` ${obj.condition}` : "";
+            display = `${num} ft.${cond}`;
+        } else {
+            display = `${v}`;
+        }
+        
+        if (k === "walk") {
+            parts.unshift(display); // walk first, unlabeled
+        } else {
+            parts.push(`${k} ${display}`);
+        }
+    }
+    return parts.join(", ");
+}
+
+function formatAC(ac: any[]): string {
+    if (!ac || ac.length === 0) return "10";
+    return ac.map((a: any) => {
+        if (typeof a === "number") return `${a}`;
+        if (typeof a === "object") {
+            const base = a.ac ?? "";
+            const condition = a.condition ? ` ${render5etoolsText(a.condition)}` : "";
+            if (a.from && a.from.length > 0) {
+                const fromText = a.from.map((f: string) => render5etoolsText(f)).join(", ");
+                return `${base} (${fromText})${condition}`;
+            }
+            return `${base}${condition}`;
+        }
+        return `${a}`;
+    }).join(", ");
+}
+
+/**
+ * Formats damage immunity/resistance/vulnerability arrays.
+ * Entries can be strings or objects like:
+ * { immune: ["bludgeoning","piercing","slashing"], note: "from nonmagical attacks", cond: true }
+ */
+function formatDamageList(list: any[]): string {
+    if (!list || list.length === 0) return "";
+    return list.map((item: any) => {
+        if (typeof item === "string") return item;
+        if (typeof item === "object") {
+            // Could have: immune/resist/vulnerable key + note
+            const damageTypes: string[] = item.immune || item.resist || item.vulnerable || [];
+            const note: string = item.note ? ` (${item.note})` : "";
+            return damageTypes.join(", ") + note;
+        }
+        return String(item);
+    }).join("; ");
+}
+
+function formatConditionImmune(list: any[]): string {
+    if (!list || list.length === 0) return "";
+    return list.map((item: any) => {
+        if (typeof item === "string") return item;
+        // Can be objects with condition + note
+        if (typeof item === "object") {
+            const conds = item.conditionImmune || [];
+            const note = item.note ? ` (${item.note})` : "";
+            return conds.join(", ") + note;
+        }
+        return String(item);
+    }).join("; ");
+}
+
+function formatCR(cr: any): { crText: string; lairText: string; xp: string } {
+    if (!cr) return { crText: "—", lairText: "", xp: "" };
+    if (typeof cr === "string") {
+        return { crText: cr, lairText: "", xp: CR_XP[cr] ? `${CR_XP[cr]} XP` : "" };
+    }
+    if (typeof cr === "object") {
+        const base = cr.cr || "—";
+        const lair = cr.lair ? ` (${cr.lair} in lair)` : "";
+        const xp = cr.xp ? `${cr.xp.toLocaleString()} XP` : (CR_XP[base] ? `${CR_XP[base]} XP` : "");
+        return { crText: base, lairText: lair, xp };
+    }
+    return { crText: String(cr), lairText: "", xp: "" };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Entry Renderer
+// ────────────────────────────────────────────────────────────────────────────
+
+const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
-        if (typeof e === 'string') {
-            return <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>{render5etoolsText(e)}</p>;
-        }
-        if (e.name && e.entries) {
+        if (e == null) return null;
+
+        // Plain string
+        if (typeof e === "string") {
             return (
-                <div key={i} style={{ marginBottom: "8px" }}>
+                <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>
+                    {render5etoolsText(e)}
+                </p>
+            );
+        }
+
+        if (typeof e !== "object") return null;
+
+        const type = e.type;
+
+        // Named entry with entries[] (most common for traits/actions)
+        if (type === "entries" || (!type && e.name && e.entries)) {
+            return (
+                <div key={i} style={{ marginBottom: "6px" }}>
                     <strong>{render5etoolsText(e.name)}. </strong>
-                    <span style={{ display: "inline" }}>{renderEntries(e.entries)}</span>
+                    {renderEntries(e.entries, depth)}
                 </div>
             );
         }
-        if (e.type === 'list') {
-            return <ul key={i} style={{ margin: "4px 0", paddingLeft: "18px" }}>{e.items.map((it: any, j: number) => <li key={j} style={{ marginBottom: "2px" }}>{renderEntries([it])}</li>)}</ul>;
+
+        // Named item with a single "entry" string (used in list-hang-notitle)
+        if (type === "item") {
+            if (e.name && e.entry) {
+                return (
+                    <div key={i} style={{ marginBottom: "6px" }}>
+                        <em><strong>{render5etoolsText(e.name)}.</strong></em>{" "}
+                        {render5etoolsText(e.entry)}
+                    </div>
+                );
+            }
+            if (e.name && e.entries) {
+                return (
+                    <div key={i} style={{ marginBottom: "6px" }}>
+                        <em><strong>{render5etoolsText(e.name)}.</strong></em>{" "}
+                        {renderEntries(e.entries, depth)}
+                    </div>
+                );
+            }
+            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{render5etoolsText(e.entry)}</p>;
         }
+
+        // List
+        if (type === "list") {
+            const items: any[] = e.items || [];
+            const isHangNotitle = e.style?.includes("hang-notitle");
+            return (
+                <ul key={i} style={{ margin: "4px 0", paddingLeft: isHangNotitle ? "0" : "18px", listStyle: isHangNotitle ? "none" : "disc" }}>
+                    {items.map((it: any, j: number) => (
+                        <li key={j} style={{ marginBottom: "3px" }}>
+                            {renderEntries([it], depth + 1)}
+                        </li>
+                    ))}
+                </ul>
+            );
+        }
+
+        // Inset / sidebar variant — render as a callout box
+        if (type === "inset" || type === "insetReadaloud" || type === "variant") {
+            return (
+                <div key={i} style={{
+                    border: "1px solid #58180D",
+                    borderRadius: "4px",
+                    padding: "8px 12px",
+                    margin: "8px 0",
+                    background: "#f5ebe0",
+                    fontSize: "12px",
+                }}>
+                    {e.name && (
+                        <div style={{ fontWeight: "bold", color: "#58180D", marginBottom: "4px" }}>
+                            {render5etoolsText(e.name)}
+                        </div>
+                    )}
+                    {e.entries && renderEntries(e.entries, depth + 1)}
+                </div>
+            );
+        }
+
+        // Table
+        if (type === "table") {
+            const caption: string = e.caption || "";
+            const colLabels: string[] = e.colLabels || [];
+            const rows: any[][] = e.rows || [];
+            return (
+                <div key={i} style={{ margin: "8px 0", overflowX: "auto" }}>
+                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{caption}</div>}
+                    <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>
+                        {colLabels.length > 0 && (
+                            <thead>
+                                <tr>
+                                    {colLabels.map((col: string, j: number) => (
+                                        <th key={j} style={{ border: "1px solid #ccc", padding: "3px 6px", background: "#e8d5b7", textAlign: "left" }}>
+                                            {render5etoolsText(col)}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                        )}
+                        <tbody>
+                            {rows.map((row: any[], j: number) => (
+                                <tr key={j}>
+                                    {row.map((cell: any, k: number) => (
+                                        <td key={k} style={{ border: "1px solid #ccc", padding: "3px 6px" }}>
+                                            {typeof cell === "string"
+                                                ? render5etoolsText(cell)
+                                                : typeof cell === "object" && cell?.type === "cell"
+                                                    ? render5etoolsText(cell.entry || cell.exact || "")
+                                                    : String(cell ?? "")}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        }
+
+        // Fallback — try to render entries/entry if present
+        if (e.entries) return renderEntries(e.entries, depth);
+        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{render5etoolsText(e.entry)}</p>;
+
         return null;
     });
 };
+
+// ────────────────────────────────────────────────────────────────────────────
+// Spellcasting Renderer
+// ────────────────────────────────────────────────────────────────────────────
+
+const renderSpellcasting = (spellcasting: any[]) => {
+    if (!spellcasting || !Array.isArray(spellcasting)) return null;
+    return spellcasting.map((s, i) => (
+        <div key={i} style={{ marginBottom: "12px", fontSize: "13px" }}>
+            <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
+                {s.name || "Spellcasting"}
+            </h3>
+            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries)}</div>}
+
+            {/* At will */}
+            {s.will && (
+                <p style={{ margin: "4px 0" }}>
+                    <strong>At will: </strong>
+                    {s.will.map((sp: any) => render5etoolsText(typeof sp === "string" ? sp : (sp.entry || sp.name || ""))).join(", ")}
+                </p>
+            )}
+
+            {/* Daily (e.g. "1e", "2", "3e") */}
+            {s.daily && Object.entries(s.daily).map(([k, v]: [string, any]) => {
+                // k might be "1e" (each), "2e", "3", etc.
+                const count = k.replace("e", "");
+                const each = k.includes("e") ? " each" : "";
+                const label = `${count}/day${each}`;
+                return (
+                    <p key={k} style={{ margin: "4px 0" }}>
+                        <strong>{label}: </strong>
+                        {(v as any[]).map((sp: any) => render5etoolsText(typeof sp === "string" ? sp : (sp.entry || sp.name || ""))).join(", ")}
+                    </p>
+                );
+            })}
+
+            {/* Spell slot casting by level */}
+            {s.spells && Object.entries(s.spells).map(([level, data]: [string, any]) => (
+                <p key={level} style={{ margin: "4px 0" }}>
+                    <strong>
+                        {level === "0"
+                            ? "Cantrips (at will)"
+                            : `${getOrdinal(parseInt(level))} level (${data.slots ?? 0} slot${data.slots !== 1 ? "s" : ""})`}:{" "}
+                    </strong>
+                    {(data.spells || []).map((sp: any) => render5etoolsText(typeof sp === "string" ? sp : (sp.entry || sp.name || ""))).join(", ")}
+                </p>
+            ))}
+
+            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries)}</div>}
+        </div>
+    ));
+};
+
+function getOrdinal(n: number): string {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Sub-components
+// ────────────────────────────────────────────────────────────────────────────
 
 const getModifier = (score: number) => {
     const mod = Math.floor((score - 10) / 2);
@@ -37,15 +383,15 @@ const AbilityTable = ({ monster }: { monster: any }) => {
             {abilities.map(ab => (
                 <div key={ab}>
                     <div style={{ fontWeight: "bold", textTransform: "uppercase", fontSize: "11px", color: "#58180D" }}>{ab}</div>
-                    <div style={{ fontSize: "14px" }}>{monster[ab] || 10} ({getModifier(monster[ab] || 10)})</div>
+                    <div style={{ fontSize: "14px" }}>{monster[ab] ?? 10} ({getModifier(monster[ab] ?? 10)})</div>
                 </div>
             ))}
         </div>
     );
 };
 
-const MetadataLine = ({ label, value }: { label: string, value: any }) => {
-    if (!value || (Array.isArray(value) && value.length === 0)) return null;
+const MetadataLine = ({ label, value }: { label: string; value: any }) => {
+    if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
     return (
         <p style={{ margin: "2px 0", fontSize: "13px" }}>
             <strong style={{ color: "#58180D" }}>{label}</strong> {value}
@@ -53,39 +399,15 @@ const MetadataLine = ({ label, value }: { label: string, value: any }) => {
     );
 };
 
-const renderSpellcasting = (spellcasting: any[]) => {
-    if (!spellcasting || !Array.isArray(spellcasting)) return null;
-    return spellcasting.map((s, i) => (
-        <div key={i} style={{ marginBottom: "12px", fontSize: "13px" }}>
-            <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
-                {s.name || "Spellcasting"}
-            </h3>
-            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries)}</div>}
-            
-            {s.will && (
-                <p style={{ margin: "4px 0" }}>
-                    <strong>At will: </strong>{s.will.map((sp: any) => render5etoolsText(typeof sp === 'string' ? sp : sp.entry)).join(", ")}
-                </p>
-            )}
+const SectionHeader = ({ title }: { title: string }) => (
+    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
+        {title}
+    </h3>
+);
 
-            {s.daily && Object.entries(s.daily).map(([k, v]: [string, any]) => (
-                <p key={k} style={{ margin: "4px 0" }}>
-                    <strong>{k.replace('e', '/day each')}: </strong>
-                    {v.map((sp: any) => render5etoolsText(typeof sp === 'string' ? sp : sp.entry)).join(", ")}
-                </p>
-            ))}
-
-            {s.spells && Object.entries(s.spells).map(([level, data]: [string, any]) => (
-                <p key={level} style={{ margin: "4px 0" }}>
-                    <strong>{level === '0' ? 'Cantrips (at will)' : `Level ${level} (${data.slots || 0} slots)`}: </strong>
-                    {data.spells.map((sp: any) => render5etoolsText(typeof sp === 'string' ? sp : sp.entry)).join(", ")}
-                </p>
-            ))}
-
-            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries)}</div>}
-        </div>
-    ));
-};
+// ────────────────────────────────────────────────────────────────────────────
+// Main Component
+// ────────────────────────────────────────────────────────────────────────────
 
 export default function ViewPopover() {
     const [monster, setMonster] = useState<any>(null);
@@ -101,23 +423,14 @@ export default function ViewPopover() {
                     const urlParams = new URLSearchParams(query);
                     const tid = urlParams.get("id");
 
-                    if (!tid) {
-                        setError("No token ID provided.");
-                        return;
-                    }
+                    if (!tid) { setError("No token ID provided."); return; }
                     setTokenId(tid);
 
                     const items = await OBR.scene.items.getItems([tid]);
-                    if (items.length === 0) {
-                        setError("Token not found.");
-                        return;
-                    }
+                    if (items.length === 0) { setError("Token not found."); return; }
 
                     const monsterMetadata = items[0].metadata[METADATA_KEY];
-                    if (!monsterMetadata) {
-                        setError("No data found. Try re-importing.");
-                        return;
-                    }
+                    if (!monsterMetadata) { setError("No data found. Try re-importing."); return; }
 
                     setMonster(monsterMetadata);
                 } catch (err: any) {
@@ -146,121 +459,177 @@ export default function ViewPopover() {
     };
 
     if (error) {
-        return <div style={{ padding: "16px", color: "#800", background: "#fee", border: "1px solid #fcc", borderRadius: "8px" }}>
-            <strong>Error:</strong> {error}
-        </div>;
+        return (
+            <div style={{ padding: "16px", color: "#800", background: "#fee", border: "1px solid #fcc", borderRadius: "8px" }}>
+                <strong>Error:</strong> {error}
+            </div>
+        );
     }
 
     if (!monster) {
-        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.2.4)...</div>;
+        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.2.5)...</div>;
     }
 
-    // Helper expansions
-    const sizeMap: any = { "T": "Tiny", "S": "Small", "M": "Medium", "L": "Large", "H": "Huge", "G": "Gargantuan" };
-    const displaySize = sizeMap[monster.size?.[0]] || monster.size?.[0] || "Medium";
-    const typeText = typeof monster.type === 'string' ? monster.type : (monster.type?.type || "creature");
-    
-    // Clean up alignment (remove tags, handle objects)
-    const alignText = monster.alignment 
-        ? (Array.isArray(monster.alignment) 
-            ? monster.alignment.map((a: any) => typeof a === 'string' ? a : (a.alignment || JSON.stringify(a))).join(", ") 
-            : monster.alignment.toString())
+    // ── Derived display values ──────────────────────────────────────────────
+
+    const displaySize = SIZE_MAP[monster.size?.[0]] || monster.size?.[0] || "Medium";
+    const typeText = formatType(monster.type);
+    const alignText = formatAlignment(monster.alignment);
+
+    const acText = formatAC(monster.ac || []);
+    const hpText = `${monster.hp?.average ?? "??"} ${monster.hp?.formula ? `(${monster.hp.formula})` : ""}`.trim();
+    const speedText = formatSpeed(monster.speed);
+
+    const saves = monster.save
+        ? Object.entries(monster.save).map(([k, v]) => `${k.toUpperCase()} ${v}`).join(", ")
+        : null;
+    const skills = monster.skill
+        ? Object.entries(monster.skill).map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)} ${v}`).join(", ")
+        : null;
+    const senses = monster.senses
+        ? (Array.isArray(monster.senses) ? monster.senses.join(", ") : monster.senses)
+        : null;
+    const passivePerception = monster.passive ?? 10;
+
+    const vulnerable = formatDamageList(monster.vulnerable || []);
+    const resistant = formatDamageList(monster.resist || []);
+    const immune = formatDamageList(monster.immune || []);
+    const condImmune = formatConditionImmune(monster.conditionImmune || []);
+
+    const languages = Array.isArray(monster.languages) ? monster.languages.join(", ") : monster.languages;
+
+    const { crText, lairText, xp } = formatCR(monster.cr);
+    const crDisplay = `${crText}${lairText}${xp ? ` (${xp})` : ""}`;
+    const profBonus = crText && crText !== "—" ? getProficiencyBonus(crText) : null;
+
+    const legendaryName = monster.name || "creature";
+    const legendaryPreamble = monster.legendary
+        ? `The ${legendaryName} can take 3 legendary actions, choosing from the options below. Only one legendary action option can be used at a time and only at the end of another creature's turn. The ${legendaryName} regains spent legendary actions at the start of its turn.`
         : null;
 
-    const acText = Array.isArray(monster.ac) 
-        ? monster.ac.map((a: any) => typeof a === 'object' ? `${a.ac}${a.from ? ` (${a.from.join(", ")})` : ""}` : a).join(", ")
-        : (monster.ac || "10");
-
-    const hpText = `${monster.hp?.average || "??"} ${monster.hp?.formula ? `(${monster.hp.formula})` : ""}`;
-    
-    const speedText = typeof monster.speed === 'string' ? monster.speed : Object.entries(monster.speed || {}).map(([k, v]) => `${k} ${typeof v === 'object' ? (v as any).number : v}ft.`).join(", ");
-
-    const saves = monster.save ? Object.entries(monster.save).map(([k, v]) => `${k.toUpperCase()} ${v}`).join(", ") : null;
-    const skills = monster.skill ? Object.entries(monster.skill).map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)} ${v}`).join(", ") : null;
-    const senses = monster.senses ? (Array.isArray(monster.senses) ? monster.senses.join(", ") : monster.senses) : null;
-    const passivePerception = monster.passive || (skills?.toLowerCase().includes("perception") ? monster.skill.perception + 10 : 10);
-
-    const crText = typeof monster.cr === 'string' ? monster.cr : (monster.cr?.cr || monster.cr);
-    const xpText = monster.cr?.xp ? ` (${monster.cr.xp} XP)` : "";
+    // ── Render ──────────────────────────────────────────────────────────────
 
     return (
         <div style={{ padding: "20px", fontFamily: "'Inter', sans-serif", color: "#333", background: "#fdf5e6", minHeight: "100vh", lineHeight: "1.5" }}>
+
+            {/* Name + Remove */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "3px solid #58180D", marginBottom: "8px", paddingBottom: "4px" }}>
                 <h2 style={{ color: "#58180D", margin: 0, fontSize: "22px" }}>
                     {monster.sourceUrl ? (
-                        <a href={monster.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "none" }}>{monster.name}</a>
-                    ) : (
-                        monster.name
-                    )}
+                        <a href={monster.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "none" }}>
+                            {monster.name}
+                        </a>
+                    ) : monster.name}
                 </h2>
-                <button onClick={handleRemove} style={{ padding: "4px 8px", fontSize: "11px", background: "#800", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Remove</button>
+                <button onClick={handleRemove} style={{ padding: "4px 8px", fontSize: "11px", background: "#800", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>
+                    Remove
+                </button>
             </div>
 
+            {/* Type line */}
             <div style={{ fontStyle: "italic", fontSize: "14px", marginBottom: "8px" }}>
                 {displaySize} {typeText}{alignText ? `, ${alignText}` : ""}
             </div>
 
             <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
 
-            <MetadataLine label="Armor Class" value={`${acText}`} />
+            {/* Core stats */}
+            <MetadataLine label="Armor Class" value={acText} />
             <MetadataLine label="Hit Points" value={hpText} />
             <MetadataLine label="Speed" value={speedText} />
 
             <AbilityTable monster={monster} />
 
+            {/* Secondary stats */}
             <div style={{ marginBottom: "8px" }}>
                 <MetadataLine label="Saving Throws" value={saves} />
                 <MetadataLine label="Skills" value={skills} />
+                <MetadataLine label="Damage Vulnerabilities" value={vulnerable} />
+                <MetadataLine label="Damage Resistances" value={resistant} />
+                <MetadataLine label="Damage Immunities" value={immune} />
+                <MetadataLine label="Condition Immunities" value={condImmune} />
                 <MetadataLine label="Senses" value={`${senses ? senses + ", " : ""}passive Perception ${passivePerception}`} />
-                <MetadataLine label="Languages" value={Array.isArray(monster.languages) ? monster.languages.join(", ") : monster.languages} />
-                <MetadataLine label="Challenge" value={`${crText}${xpText}`} />
+                <MetadataLine label="Languages" value={languages || "—"} />
+                <MetadataLine label="Challenge" value={crDisplay} />
+                {profBonus && <MetadataLine label="Proficiency Bonus" value={profBonus} />}
             </div>
 
             <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
 
-            {monster.trait && <div style={{ marginBottom: "12px" }}>{renderEntries(monster.trait)}</div>}
+            {/* Traits */}
+            {monster.trait && (
+                <div style={{ marginBottom: "12px" }}>
+                    {renderEntries(monster.trait)}
+                </div>
+            )}
 
+            {/* Spellcasting (within traits) */}
             {monster.spellcasting && renderSpellcasting(monster.spellcasting)}
 
+            {/* Actions */}
             {monster.action && (
                 <div style={{ marginBottom: "12px" }}>
-                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Actions</h3>
+                    <SectionHeader title="Actions" />
                     {renderEntries(monster.action)}
                 </div>
             )}
 
+            {/* Bonus Actions */}
             {monster.bonus && (
                 <div style={{ marginBottom: "12px" }}>
-                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Bonus Actions</h3>
+                    <SectionHeader title="Bonus Actions" />
                     {renderEntries(monster.bonus)}
                 </div>
             )}
 
+            {/* Reactions */}
             {monster.reaction && (
                 <div style={{ marginBottom: "12px" }}>
-                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Reactions</h3>
+                    <SectionHeader title="Reactions" />
                     {renderEntries(monster.reaction)}
                 </div>
             )}
 
+            {/* Legendary Actions */}
             {monster.legendary && (
                 <div style={{ marginBottom: "12px" }}>
-                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Legendary Actions</h3>
-                    {monster.legendaryGroup?.name && (
-                        <p style={{ fontStyle: "italic", fontSize: "13px", marginBottom: "8px" }}>
-                            The {monster.name} can take 3 legendary actions...
+                    <SectionHeader title="Legendary Actions" />
+                    {legendaryPreamble && (
+                        <p style={{ fontStyle: "italic", fontSize: "13px", marginBottom: "8px", lineHeight: "1.4" }}>
+                            {legendaryPreamble}
                         </p>
                     )}
                     {renderEntries(monster.legendary)}
                 </div>
             )}
 
-            {monster.lairActions && (
+            {/* Mythic Actions */}
+            {monster.mythic && (
                 <div style={{ marginBottom: "12px" }}>
-                    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>Lair Actions</h3>
-                    {renderEntries(monster.lairActions)}
+                    <SectionHeader title="Mythic Actions" />
+                    {monster.mythicHeader && (
+                        <p style={{ fontStyle: "italic", fontSize: "13px", marginBottom: "8px" }}>
+                            {renderEntries(monster.mythicHeader)}
+                        </p>
+                    )}
+                    {renderEntries(monster.mythic)}
                 </div>
             )}
+
+            {/* Lair Actions note — data lives in separate file, link to 5e.tools */}
+            {monster.legendaryGroup && (
+                <div style={{ marginTop: "16px", fontSize: "12px", color: "#666", borderTop: "1px solid #ccc", paddingTop: "8px" }}>
+                    {monster.sourceUrl && (
+                        <span>
+                            Lair Actions & Regional Effects:{" "}
+                            <a href={monster.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#58180D" }}>
+                                View on 5e.tools
+                            </a>
+                        </span>
+                    )}
+                </div>
+            )}
+
         </div>
     );
 }
