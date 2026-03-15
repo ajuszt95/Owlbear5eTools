@@ -620,7 +620,7 @@ export default function ViewPopover() {
 
     if (!monster) {
         return (
-                <div>Loading (v1.4.7)...</div>
+                <div>Loading (v1.4.8)...</div>
         );
     }
 
