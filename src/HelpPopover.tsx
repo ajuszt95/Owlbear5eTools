@@ -171,7 +171,7 @@ export default function HelpPopover() {
                 justifyContent: "space-between"
             }}>
                 <span>Created by ajuszt95</span>
-                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.4.3</span>
+                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.4.4</span>
             </footer>
         </div>
     );

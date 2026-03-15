@@ -178,23 +178,33 @@ function formatCR(cr: any): { crText: string; lairText: string; xp: string } {
 
 const RollButton = ({ segment, active }: { segment: any; active: boolean }) => {
     const handleRoll = async () => {
+        console.log("[RollButton] Clicked! Active:", active);
         if (!active) return;
-        const player = await OBR.player.getName();
-        const playerId = await OBR.player.getId();
         
-        const rollRequest = {
-            rollId: Math.random().toString(36).substring(7),
-            playerId: playerId,
-            playerName: player,
-            rollTarget: 'everyone',
-            diceNotation: segment.formula,
-            showResults: true,
-            timestamp: Date.now(),
-            source: EXTENSION_ID,
-            label: segment.label
-        };
-
-        await OBR.broadcast.sendMessage("dice-plus/roll-request", rollRequest);
+        try {
+            console.log("[RollButton] Fetching player info...");
+            const player = await OBR.player.getName();
+            const playerId = await OBR.player.getId();
+            console.log(`[RollButton] Player: ${player} (${playerId})`);
+            
+            const rollRequest = {
+                rollId: "roll_" + Date.now() + "_" + Math.random().toString(36).substring(7),
+                playerId: playerId,
+                playerName: player,
+                rollTarget: 'everyone',
+                diceNotation: segment.formula,
+                showResults: true,
+                timestamp: Date.now(),
+                source: EXTENSION_ID,
+                label: segment.label
+            };
+            
+            console.log("[RollButton] Sending dice-plus/roll-request:", JSON.stringify(rollRequest));
+            await OBR.broadcast.sendMessage("dice-plus/roll-request", rollRequest);
+            console.log("[RollButton] Message execution finished.");
+        } catch (err) {
+            console.error("[RollButton] CRITICAL ERROR during roll:", err);
+        }
     };
 
     if (!active) return <span>{segment.content}</span>;
@@ -514,17 +524,20 @@ export default function ViewPopover() {
 
                     // --- Dice handshake ---
                     const requestId = Math.random().toString(36).substring(7);
-                    console.log(`[DiceHandshake] Starting ping with requestId: ${requestId}`);
+                    console.log(`[DiceHandshake] Starting ping with requestId: ${requestId} for v1.4.4`);
                     unstop = OBR.broadcast.onMessage("dice-plus/isReady", (data: any) => {
-                        console.log("[DiceHandshake] Received response:", data);
-                        if (data && data.ready === true) {
-                            console.log("[DiceHandshake] Dice+ is ready!");
+                        console.log("[DiceHandshake] RAW response received:", JSON.stringify(data));
+                        // Some systems wrap the payload in .data, others don't.
+                        const payload = data?.data || data;
+                        if (payload && payload.ready === true) {
+                            console.log("[DiceHandshake] Dice+ confirmed READY via payload:", payload);
                             setIsDiceReady(true);
                         }
                     });
 
                     const doPing = () => {
-                        OBR.broadcast.sendMessage("dice-plus/isReady", { requestId, timestamp: Date.now(), source: EXTENSION_ID });
+                        const pingPayload = { requestId, timestamp: Date.now(), source: EXTENSION_ID, request: true };
+                        OBR.broadcast.sendMessage("dice-plus/isReady", pingPayload);
                     };
                     doPing();
                     pingInterval = setInterval(doPing, 1000);
@@ -762,7 +775,7 @@ export default function ViewPopover() {
 
             {/* Footer / Debug */}
             <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>v1.4.3</span>
+                <span>v1.4.4</span>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     {!activeDice && (
                         <button 
