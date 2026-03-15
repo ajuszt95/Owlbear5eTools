@@ -613,9 +613,7 @@ export default function ViewPopover() {
 
     if (!monster) {
         return (
-            <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>
-                <div>Loading (v1.4.3)...</div>
-            </div>
+                <div>Loading (v1.4.7)...</div>
         );
     }
 
@@ -690,7 +688,7 @@ export default function ViewPopover() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "3px solid #58180D", marginBottom: "8px", paddingBottom: "4px" }}>
                 <h2 style={{ color: "#58180D", margin: 0, fontSize: "22px" }}>
                     {monster.sourceUrl ? (
-                        <a href={monster.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "none" }}>
+                        <a href={monster.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "underline dotted", fontWeight: "bold" }}>
                             {monster.name}
                         </a>
                     ) : monster.name}
@@ -806,7 +804,7 @@ export default function ViewPopover() {
 
             {/* Footer / Debug */}
             <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>v1.4.6</span>
+                <span>v1.4.7</span>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     {!activeDice && (
                         <button 
