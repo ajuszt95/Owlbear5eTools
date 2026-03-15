@@ -514,8 +514,11 @@ export default function ViewPopover() {
 
                     // --- Dice handshake ---
                     const requestId = Math.random().toString(36).substring(7);
+                    console.log(`[DiceHandshake] Starting ping with requestId: ${requestId}`);
                     unstop = OBR.broadcast.onMessage("dice-plus/isReady", (data: any) => {
+                        console.log("[DiceHandshake] Received response:", data);
                         if (data && data.ready === true) {
+                            console.log("[DiceHandshake] Dice+ is ready!");
                             setIsDiceReady(true);
                         }
                     });
@@ -567,16 +570,7 @@ export default function ViewPopover() {
     if (!monster) {
         return (
             <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>
-                <div>Loading (v1.4.2)...</div>
-                <div style={{ marginTop: "12px", fontSize: "11px", opacity: 0.6 }}>
-                    Waiting for Dice+ handshake... 
-                    <button 
-                        onClick={() => setForceDice(true)}
-                        style={{ background: "none", border: "none", color: "#58180D", textDecoration: "underline", cursor: "pointer", padding: "0 4px" }}
-                    >
-                        Force Enable Rolling
-                    </button>
-                </div>
+                <div>Loading (v1.4.3)...</div>
             </div>
         );
     }
@@ -767,11 +761,21 @@ export default function ViewPopover() {
             )}
 
             {/* Footer / Debug */}
-            <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between" }}>
-                <span>v1.4.2</span>
-                <span style={{ color: activeDice ? "#080" : "#800" }}>
-                    Dice Engine: {activeDice ? "READY" : "OFFLINE"}
-                </span>
+            <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>v1.4.3</span>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    {!activeDice && (
+                        <button 
+                            onClick={() => setForceDice(true)}
+                            style={{ background: "none", border: "none", color: "#58180D", textDecoration: "underline", cursor: "pointer", fontSize: "10px", padding: 0 }}
+                        >
+                            Force Enable
+                        </button>
+                    )}
+                    <span style={{ color: activeDice ? "#080" : "#800" }}>
+                        Dice Engine: {activeDice ? "READY" : "OFFLINE"}
+                    </span>
+                </div>
             </div>
         </div>
     );
