@@ -6,21 +6,22 @@ export function render5etoolsText(text: string): string {
     if (!text) return "";
 
     // One-pass robust tag replacement
-    // Regex matches {@tag content} or {@tag}
     return text.replace(/{@(\w+)(?:\s+([^}]+))?}/gi, (_, tag, content) => {
         const parts = (content || "").split('|');
-        const rawValue = parts[0].trim();
+        const rawValue = (parts[0] || "").trim();
         const lowTag = tag.toLowerCase();
 
         switch (lowTag) {
             case "atk":
+            case "atkr":
                 const lowValue = rawValue.toLowerCase();
-                if (lowValue.includes("mw") && lowValue.includes("rw")) return "Melee or Ranged Weapon Attack:";
-                if (lowValue.includes("ms") && lowValue.includes("rs")) return "Melee or Ranged Spell Attack:";
+                // Specific 5e.tools mappings
                 if (lowValue === "mw") return "Melee Weapon Attack:";
                 if (lowValue === "rw") return "Ranged Weapon Attack:";
                 if (lowValue === "ms") return "Melee Spell Attack:";
                 if (lowValue === "rs") return "Ranged Spell Attack:";
+                if (lowValue === "mw,rw") return "Melee or Ranged Weapon Attack:";
+                if (lowValue === "ms,rs") return "Melee or Ranged Spell Attack:";
                 if (lowValue === "m") return "Melee Attack Roll:";
                 if (lowValue === "r") return "Ranged Attack Roll:";
                 return "Attack:";
@@ -33,6 +34,7 @@ export function render5etoolsText(text: string): string {
                 return `DC ${rawValue}`;
 
             case "sav":
+            case "actsave":
                 const attr = rawValue.split(' ')[0].toLowerCase();
                 const savMap: Record<string, string> = {
                     str: "Strength", dex: "Dexterity", con: "Constitution",
@@ -40,11 +42,12 @@ export function render5etoolsText(text: string): string {
                 };
                 return `${savMap[attr] || rawValue} Saving Throw:`;
 
-            case "h": return "Hit:";
+            case "h": return "Hit: ";
             case "recharge": return rawValue ? `(Recharge ${rawValue}\u20136)` : "(Recharge 6)";
             case "actsavefail": return "Failure:";
             case "actsavesuccess": return "Success:";
             case "actsavesuccessfail": return "Failure or Success:";
+            case "actsavefailby": return "Failure by 5 or more:";
             case "miss": return "Miss:";
             case "d20": return rawValue;
 
@@ -102,7 +105,5 @@ export function render5etoolsText(text: string): string {
             default:
                 return rawValue || "";
         }
-    })
-    .replace(/\[Area of Effect\]/g, "")
-    .trim();
+    }).replace(/  +/g, ' ').trim();
 }

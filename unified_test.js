@@ -3,23 +3,22 @@ function render5etoolsText(text) {
     if (!text) return "";
 
     // One-pass robust tag replacement
-    // Regex matches {@tag content} or {@tag}
-    // Note the use of [^}\s] for the tag to prevent it from stealing characters from the content
-    // and (?:\\s+([^}]+))? to make content optional but requiring a space if it exists
     return text.replace(/{@(\w+)(?:\s+([^}]+))?}/gi, (_, tag, content) => {
         const parts = (content || "").split('|');
-        const rawValue = parts[0].trim();
+        const rawValue = (parts[0] || "").trim();
         const lowTag = tag.toLowerCase();
 
         switch (lowTag) {
             case "atk":
+            case "atkr":
                 const lowValue = rawValue.toLowerCase();
-                if (lowValue.includes("mw") && lowValue.includes("rw")) return "Melee or Ranged Weapon Attack:";
-                if (lowValue.includes("ms") && lowValue.includes("rs")) return "Melee or Ranged Spell Attack:";
+                // 5e.tools mappings
                 if (lowValue === "mw") return "Melee Weapon Attack:";
                 if (lowValue === "rw") return "Ranged Weapon Attack:";
                 if (lowValue === "ms") return "Melee Spell Attack:";
                 if (lowValue === "rs") return "Ranged Spell Attack:";
+                if (lowValue === "mw,rw") return "Melee or Ranged Weapon Attack:";
+                if (lowValue === "ms,rs") return "Melee or Ranged Spell Attack:";
                 if (lowValue === "m") return "Melee Attack Roll:";
                 if (lowValue === "r") return "Ranged Attack Roll:";
                 return "Attack:";
@@ -32,7 +31,7 @@ function render5etoolsText(text) {
                 return `DC ${rawValue}`;
 
             case "sav":
-                // Handle "dex" or "dex 19" cases
+            case "actsave":
                 const attr = rawValue.split(' ')[0].toLowerCase();
                 const savMap = {
                     str: "Strength", dex: "Dexterity", con: "Constitution",
@@ -40,15 +39,15 @@ function render5etoolsText(text) {
                 };
                 return `${savMap[attr] || rawValue} Saving Throw:`;
 
-            case "h": return "Hit:";
+            case "h": return "Hit: ";
             case "recharge": return rawValue ? `(Recharge ${rawValue}\u20136)` : "(Recharge 6)";
             case "actsavefail": return "Failure:";
             case "actsavesuccess": return "Success:";
             case "actsavesuccessfail": return "Failure or Success:";
+            case "actsavefailby": return "Failure by 5 or more:";
             case "miss": return "Miss:";
             case "d20": return rawValue;
 
-            // Data/Formatting tags: return the first part of the content
             case "i":
             case "italic":
             case "b":
@@ -101,26 +100,37 @@ function render5etoolsText(text) {
                 return rawValue;
 
             default:
-                // If tag is unknown, return content if exists, otherwise empty
                 return rawValue || "";
         }
-    })
-    .replace(/\[Area of Effect\]/g, "")
-    .trim();
+    }).replace(/  +/g, ' ').trim();
 }
 
 const tests = [
-    ["{@atk m}", "Melee Attack Roll:"],
-    ["{@hit 12}", "+12"],
-    ["{@h}", "Hit:"],
-    ["{@sav dex|XMM} DC 19", "Dexterity Saving Throw: DC 19"],
-    ["{@actSaveFail}", "Failure:"],
-    ["{@actSaveSuccess}", "Success:"],
-    ["{@actSaveSuccessFail}", "Failure or Success:"],
-    ["{@recharge 5-6}", "(Recharge 5-6\u20136)"] // Wait, recharge handling might need tweak for range
+    // XMM (Bronze Dragon)
+    ["{@atkr m} {@hit 12}", "Melee Attack Roll: +12"],
+    ["{@h}16 ({@damage 2d8 + 7})", "Hit: 16 (2d8 + 7)"],
+    ["{@actSave dex|XMM} {@dc 19}", "Dexterity Saving Throw: DC 19"],
+    ["{@actSaveSuccess} Half damage.", "Success: Half damage."],
+    
+    // FTD (Topaz Dragon)
+    ["{@atk mw} {@hit 9}", "Melee Weapon Attack: +9"],
+    ["{@h} 16 (2d8+7)", "Hit: 16 (2d8+7)"],
+    ["{@recharge 5}", "(Recharge 5\u20136)"],
+    
+    // Combined / Mixed
+    ["{@sav str} {@dc 15}", "Strength Saving Throw: DC 15"],
+    ["{@atkr mw,rw} {@hit 5}", "Melee or Ranged Weapon Attack: +5"]
 ];
 
+let failed = false;
 tests.forEach(([input, expected]) => {
     const res = render5etoolsText(input);
-    console.log(`${input} => ${res} (${res === expected ? "PASS" : "FAIL, expected: " + expected})`);
+    if (res !== expected) {
+        console.log(`FAIL: [${input}] => [${res}], expected [${expected}]`);
+        failed = true;
+    } else {
+        console.log(`PASS: [${input}]`);
+    }
 });
+
+if (failed) process.exit(1);
