@@ -1,12 +1,11 @@
-/**
- * Cleans 5e.tools internal markup tags (e.g., {@hit 5}, {@dc 14}) into human-readable text.
- * Aims for parity with the official 5e.tools display.
- */
-export function render5etoolsText(text: string): string {
+
+function render5etoolsText(text) {
     if (!text) return "";
 
     // One-pass robust tag replacement
     // Regex matches {@tag content} or {@tag}
+    // Note the use of [^}\s] for the tag to prevent it from stealing characters from the content
+    // and (?:\\s+([^}]+))? to make content optional but requiring a space if it exists
     return text.replace(/{@(\w+)(?:\s+([^}]+))?}/gi, (_, tag, content) => {
         const parts = (content || "").split('|');
         const rawValue = parts[0].trim();
@@ -33,8 +32,9 @@ export function render5etoolsText(text: string): string {
                 return `DC ${rawValue}`;
 
             case "sav":
+                // Handle "dex" or "dex 19" cases
                 const attr = rawValue.split(' ')[0].toLowerCase();
-                const savMap: Record<string, string> = {
+                const savMap = {
                     str: "Strength", dex: "Dexterity", con: "Constitution",
                     int: "Intelligence", wis: "Wisdom", cha: "Charisma"
                 };
@@ -48,6 +48,7 @@ export function render5etoolsText(text: string): string {
             case "miss": return "Miss:";
             case "d20": return rawValue;
 
+            // Data/Formatting tags: return the first part of the content
             case "i":
             case "italic":
             case "b":
@@ -100,9 +101,26 @@ export function render5etoolsText(text: string): string {
                 return rawValue;
 
             default:
+                // If tag is unknown, return content if exists, otherwise empty
                 return rawValue || "";
         }
     })
     .replace(/\[Area of Effect\]/g, "")
     .trim();
 }
+
+const tests = [
+    ["{@atk m}", "Melee Attack Roll:"],
+    ["{@hit 12}", "+12"],
+    ["{@h}", "Hit:"],
+    ["{@sav dex|XMM} DC 19", "Dexterity Saving Throw: DC 19"],
+    ["{@actSaveFail}", "Failure:"],
+    ["{@actSaveSuccess}", "Success:"],
+    ["{@actSaveSuccessFail}", "Failure or Success:"],
+    ["{@recharge 5-6}", "(Recharge 5-6\u20136)"] // Wait, recharge handling might need tweak for range
+];
+
+tests.forEach(([input, expected]) => {
+    const res = render5etoolsText(input);
+    console.log(`${input} => ${res} (${res === expected ? "PASS" : "FAIL, expected: " + expected})`);
+});
