@@ -176,9 +176,9 @@ function formatCR(cr: any): { crText: string; lairText: string; xp: string } {
 // Entry Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const RollButton = ({ segment, active }: { segment: any; active: boolean }) => {
+const RollButton = ({ segment, active, rollTarget }: { segment: any; active: boolean; rollTarget: string }) => {
     const handleRoll = async () => {
-        console.log("[RollButton] Clicked! Active:", active);
+        console.log("[RollButton] Clicked! Active:", active, "Target:", rollTarget);
         if (!active) return;
         
         try {
@@ -192,8 +192,8 @@ const RollButton = ({ segment, active }: { segment: any; active: boolean }) => {
                 rollId: rid,
                 playerId: playerId,
                 playerName: player,
-                rollTarget: 'everyone',
-                target: 'everyone',
+                rollTarget: rollTarget, // Using dynamic target
+                target: rollTarget,
                 diceNotation: segment.formula,
                 notation: segment.formula,
                 showResults: true,
@@ -239,16 +239,16 @@ const RollButton = ({ segment, active }: { segment: any; active: boolean }) => {
     );
 };
 
-const renderMarkup = (text: string, active: boolean) => {
+const renderMarkup = (text: string, active: boolean, rollTarget: string) => {
     const segments = render5etoolsText(text);
     return segments.map((s, i) => (
         <span key={i}>
-            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} />}
+            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} rollTarget={rollTarget} />}
         </span>
     ));
 };
 
-const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.ReactNode => {
+const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, depth = 0): React.ReactNode => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
         if (e == null) return null;
@@ -257,7 +257,7 @@ const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.Re
         if (typeof e === "string") {
             return (
                 <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>
-                    {renderMarkup(e, activeDice)}
+                    {renderMarkup(e, activeDice, rollTarget)}
                 </p>
             );
         }
@@ -270,8 +270,8 @@ const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.Re
         if (type === "entries" || (!type && e.name && e.entries)) {
             return (
                 <div key={i} style={{ marginBottom: "6px" }}>
-                    <strong>{renderMarkup(e.name, activeDice)}. </strong>
-                    {renderEntries(e.entries, activeDice, depth)}
+                    <strong>{renderMarkup(e.name, activeDice, rollTarget)}. </strong>
+                    {renderEntries(e.entries, activeDice, rollTarget, depth)}
                 </div>
             );
         }
@@ -281,20 +281,20 @@ const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.Re
             if (e.name && e.entry) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice)}.</strong></em>{" "}
-                        {renderMarkup(e.entry, activeDice)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget)}.</strong></em>{" "}
+                        {renderMarkup(e.entry, activeDice, rollTarget)}
                     </div>
                 );
             }
             if (e.name && e.entries) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice)}.</strong></em>{" "}
-                        {renderEntries(e.entries, activeDice, depth)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget)}.</strong></em>{" "}
+                        {renderEntries(e.entries, activeDice, rollTarget, depth)}
                     </div>
                 );
             }
-            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice)}</p>;
+            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget)}</p>;
         }
 
         // List
@@ -305,7 +305,7 @@ const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.Re
                 <ul key={i} style={{ margin: "4px 0", paddingLeft: isHangNotitle ? "0" : "18px", listStyle: isHangNotitle ? "none" : "disc" }}>
                     {items.map((it: any, j: number) => (
                         <li key={j} style={{ marginBottom: "3px" }}>
-                            {renderEntries([it], activeDice, depth + 1)}
+                            {renderEntries([it], activeDice, rollTarget, depth + 1)}
                         </li>
                     ))}
                 </ul>
@@ -325,10 +325,10 @@ const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.Re
                 }}>
                     {e.name && (
                         <div style={{ fontWeight: "bold", color: "#58180D", marginBottom: "4px" }}>
-                            {renderMarkup(e.name, activeDice)}
+                            {renderMarkup(e.name, activeDice, rollTarget)}
                         </div>
                     )}
-                    {e.entries && renderEntries(e.entries, activeDice, depth + 1)}
+                    {e.entries && renderEntries(e.entries, activeDice, rollTarget, depth + 1)}
                 </div>
             );
         }
@@ -340,14 +340,14 @@ const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.Re
             const rows: any[][] = e.rows || [];
             return (
                 <div key={i} style={{ margin: "8px 0", overflowX: "auto" }}>
-                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice)}</div>}
+                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice, rollTarget)}</div>}
                     <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>
                         {colLabels.length > 0 && (
                             <thead>
                                 <tr>
                                     {colLabels.map((col: string, j: number) => (
                                         <th key={j} style={{ border: "1px solid #ccc", padding: "3px 6px", background: "#e8d5b7", textAlign: "left" }}>
-                                            {renderMarkup(col, activeDice)}
+                                            {renderMarkup(col, activeDice, rollTarget)}
                                         </th>
                                     ))}
                                 </tr>
@@ -359,9 +359,9 @@ const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.Re
                                     {row.map((cell: any, k: number) => (
                                         <td key={k} style={{ border: "1px solid #ccc", padding: "3px 6px" }}>
                                             {typeof cell === "string"
-                                                ? renderMarkup(cell, activeDice)
+                                                ? renderMarkup(cell, activeDice, rollTarget)
                                                 : typeof cell === "object" && cell?.type === "cell"
-                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice)
+                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice, rollTarget)
                                                     : String(cell ?? "")}
                                         </td>
                                     ))}
@@ -374,8 +374,8 @@ const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.Re
         }
 
         // Fallback — try to render entries/entry if present
-        if (e.entries) return renderEntries(e.entries, activeDice, depth);
-        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice)}</p>;
+        if (e.entries) return renderEntries(e.entries, activeDice, rollTarget, depth);
+        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget)}</p>;
 
         return null;
     });
@@ -385,14 +385,14 @@ const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.Re
 // Spellcasting Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const renderSpellcasting = (spellcasting: any[], activeDice: boolean) => {
+const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget: string) => {
     if (!spellcasting || !Array.isArray(spellcasting)) return null;
     return spellcasting.map((s, i) => (
         <div key={i} style={{ marginBottom: "12px", fontSize: "13px" }}>
             <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
                 {s.name || "Spellcasting"}
             </h3>
-            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, activeDice)}</div>}
+            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, activeDice, rollTarget)}</div>}
 
             {/* At will */}
             {s.will && (
@@ -401,7 +401,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean) => {
                     {s.will.map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget)}
                         </span>
                     ))}
                 </p>
@@ -418,7 +418,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean) => {
                         {(v as any[]).map((sp: any, j: number) => (
                             <span key={j}>
                                 {j > 0 && ", "}
-                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice)}
+                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget)}
                             </span>
                         ))}
                     </p>
@@ -436,13 +436,13 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean) => {
                     {(data.spells || []).map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget)}
                         </span>
                     ))}
                 </p>
             ))}
 
-            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, activeDice)}</div>}
+            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, activeDice, rollTarget)}</div>}
         </div>
     ));
 };
@@ -462,7 +462,7 @@ const getModifier = (score: number) => {
     return mod >= 0 ? `+${mod}` : `${mod}`;
 };
 
-const AbilityTable = ({ monster, active }: { monster: any; active: boolean }) => {
+const AbilityTable = ({ monster, active, rollTarget }: { monster: any; active: boolean; rollTarget: string }) => {
     const abilities = ["str", "dex", "con", "int", "wis", "cha"];
     return (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", textAlign: "center", borderTop: "1px solid #58180D", borderBottom: "1px solid #58180D", padding: "8px 0", margin: "8px 0" }}>
@@ -474,6 +474,7 @@ const AbilityTable = ({ monster, active }: { monster: any; active: boolean }) =>
                         <RollButton 
                             segment={{ type: 'roll', content: getModifier(monster[ab] ?? 10), formula: `1d20${getModifier(monster[ab] ?? 10)}`, label: `${ab.toUpperCase()} Check` }} 
                             active={active} 
+                            rollTarget={rollTarget}
                         />)
                     </div>
                 </div>
@@ -507,6 +508,7 @@ export default function ViewPopover() {
     const [error, setError] = useState<string>("");
     const [isDiceReady, setIsDiceReady] = useState(false);
     const [forceDice, setForceDice] = useState(false);
+    const [rollTarget, setRollTarget] = useState(() => localStorage.getItem("5etools-roll-target") || "everyone");
 
     useEffect(() => {
         let pingInterval: any;
@@ -603,6 +605,11 @@ export default function ViewPopover() {
         }
     };
 
+    const handleRollTargetChange = (newTarget: string) => {
+        setRollTarget(newTarget);
+        localStorage.setItem("5etools-roll-target", newTarget);
+    };
+
     if (error) {
         return (
             <div style={{ padding: "16px", color: "#800", background: "#fee", border: "1px solid #fcc", borderRadius: "8px" }}>
@@ -638,6 +645,7 @@ export default function ViewPopover() {
                     <RollButton 
                         segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k.toUpperCase()} Save` }} 
                         active={activeDice} 
+                        rollTarget={rollTarget}
                     />
                 </span>
             ))}
@@ -653,6 +661,7 @@ export default function ViewPopover() {
                     <RollButton 
                         segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k} Check` }} 
                         active={activeDice} 
+                        rollTarget={rollTarget}
                     />
                 </span>
             ))}
@@ -710,7 +719,7 @@ export default function ViewPopover() {
             <MetadataLine label="Hit Points" value={hpText} />
             <MetadataLine label="Speed" value={speedText} />
 
-            <AbilityTable monster={monster} active={activeDice} />
+            <AbilityTable monster={monster} active={activeDice} rollTarget={rollTarget} />
 
             {/* Secondary stats */}
             <div style={{ marginBottom: "8px" }}>
@@ -723,6 +732,7 @@ export default function ViewPopover() {
                 <MetadataLine label="Senses" value={`${senses ? senses + ", " : ""}passive Perception ${passivePerception}`} />
                 <MetadataLine label="Languages" value={languages || "—"} />
                 <MetadataLine label="Challenge" value={crDisplay} />
+                <MetadataLine label="Roll Target" value={rollTarget} />
                 {profBonus && <MetadataLine label="Proficiency Bonus" value={profBonus} />}
             </div>
 
@@ -731,18 +741,18 @@ export default function ViewPopover() {
             {/* Traits */}
             {monster.trait && (
                 <div style={{ marginBottom: "12px" }}>
-                    {renderEntries(monster.trait, activeDice)}
+                    {renderEntries(monster.trait, activeDice, rollTarget)}
                 </div>
             )}
 
             {/* Spellcasting (within traits) */}
-            {monster.spellcasting && renderSpellcasting(monster.spellcasting, activeDice)}
+            {monster.spellcasting && renderSpellcasting(monster.spellcasting, activeDice, rollTarget)}
 
             {/* Actions */}
             {monster.action && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Actions" />
-                    {renderEntries(monster.action, activeDice)}
+                    {renderEntries(monster.action, activeDice, rollTarget)}
                 </div>
             )}
 
@@ -750,7 +760,7 @@ export default function ViewPopover() {
             {monster.bonus && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Bonus Actions" />
-                    {renderEntries(monster.bonus, activeDice)}
+                    {renderEntries(monster.bonus, activeDice, rollTarget)}
                 </div>
             )}
 
@@ -758,7 +768,7 @@ export default function ViewPopover() {
             {monster.reaction && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Reactions" />
-                    {renderEntries(monster.reaction, activeDice)}
+                    {renderEntries(monster.reaction, activeDice, rollTarget)}
                 </div>
             )}
 
@@ -771,7 +781,7 @@ export default function ViewPopover() {
                             {legendaryPreamble}
                         </p>
                     )}
-                    {renderEntries(monster.legendary, activeDice)}
+                    {renderEntries(monster.legendary, activeDice, rollTarget)}
                 </div>
             )}
 
@@ -781,10 +791,10 @@ export default function ViewPopover() {
                     <SectionHeader title="Mythic Actions" />
                     {monster.mythicHeader && (
                         <p style={{ fontStyle: "italic", fontSize: "13px", marginBottom: "8px" }}>
-                            {renderEntries(monster.mythicHeader, activeDice)}
+                            {renderEntries(monster.mythicHeader, activeDice, rollTarget)}
                         </p>
                     )}
-                    {renderEntries(monster.mythic, activeDice)}
+                    {renderEntries(monster.mythic, activeDice, rollTarget)}
                 </div>
             )}
 
@@ -802,9 +812,28 @@ export default function ViewPopover() {
                 </div>
             )}
 
+            {/* Roll Target Toggle */}
+            <div style={{ marginTop: "16px", padding: "8px 12px", background: "rgba(88, 24, 13, 0.05)", borderRadius: "8px", display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #e0d0b0" }}>
+                <span style={{ fontSize: "12px", fontWeight: "bold", color: "#58180D" }}>Roll to:</span>
+                <div style={{ display: "flex", background: "#ddd", borderRadius: "15px", padding: "2px", width: "120px", position: "relative", cursor: "pointer" }} onClick={() => handleRollTargetChange(rollTarget === 'everyone' ? 'self' : 'everyone')}>
+                    <div style={{
+                        position: "absolute",
+                        left: rollTarget === 'everyone' ? "2px" : "62px",
+                        top: "2px",
+                        bottom: "2px",
+                        width: "56px",
+                        background: "#58180D",
+                        borderRadius: "13px",
+                        transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
+                    }} />
+                    <span style={{ flex: 1, textAlign: "center", fontSize: "10px", zIndex: 1, color: rollTarget === 'everyone' ? "white" : "#666", lineHeight: "18px", transition: "color 0.2s" }}>Everyone</span>
+                    <span style={{ flex: 1, textAlign: "center", fontSize: "10px", zIndex: 1, color: rollTarget === 'self' ? "white" : "#666", lineHeight: "18px", transition: "color 0.2s" }}>Self</span>
+                </div>
+            </div>
+
             {/* Footer / Debug */}
             <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>v1.4.7</span>
+                <span>v1.4.8</span>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     {!activeDice && (
                         <button 

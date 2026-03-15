@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import OBR from "@owlbear-rodeo/sdk";
 import { fetchMonsterData } from "./api";
 import { spawnMonster } from "./spawning";
 
@@ -7,6 +8,14 @@ export default function HelpPopover() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState(false);
+    const [role, setRole] = useState<string | null>(null);
+
+    useEffect(() => {
+        OBR.onReady(async () => {
+            const r = await OBR.player.getRole();
+            setRole(r);
+        });
+    }, []);
 
     const handleSpawn = async () => {
         setLoading(true);
@@ -40,6 +49,39 @@ export default function HelpPopover() {
             setLoading(false);
         }
     };
+
+    if (role === null) {
+        return (
+            <div style={{ padding: "32px", fontFamily: "'Inter', sans-serif", color: "#666", background: "#fdf5e6", minHeight: "100vh", textAlign: "center" }}>
+                Loading...
+            </div>
+        );
+    }
+
+    if (role !== "GM") {
+        return (
+            <div style={{
+                padding: "32px",
+                fontFamily: "'Inter', sans-serif",
+                color: "#333",
+                background: "#fdf5e6",
+                minHeight: "100vh",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                alignItems: "center",
+                textAlign: "center"
+            }}>
+                <h2 style={{ color: "#58180D", marginBottom: "16px" }}>Restricted Access</h2>
+                <p style={{ fontSize: "16px", fontStyle: "italic" }}>
+                    "Move along, this extension is for the Dungeon Master..."
+                </p>
+                <div style={{ marginTop: "40px", fontSize: "11px", color: "#999" }}>
+                    v1.4.8
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div style={{
@@ -171,7 +213,7 @@ export default function HelpPopover() {
                 justifyContent: "space-between"
             }}>
                 <span>Created by ajuszt95</span>
-                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.4.5</span>
+                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.4.8</span>
             </footer>
         </div>
     );
