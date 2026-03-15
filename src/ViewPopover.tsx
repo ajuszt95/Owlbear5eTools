@@ -176,9 +176,9 @@ function formatCR(cr: any): { crText: string; lairText: string; xp: string } {
 // Entry Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const RollButton = ({ segment, isDiceReady }: { segment: any; isDiceReady: boolean }) => {
+const RollButton = ({ segment, active }: { segment: any; active: boolean }) => {
     const handleRoll = async () => {
-        if (!isDiceReady) return;
+        if (!active) return;
         const player = await OBR.player.getName();
         const playerId = await OBR.player.getId();
         
@@ -197,7 +197,7 @@ const RollButton = ({ segment, isDiceReady }: { segment: any; isDiceReady: boole
         await OBR.broadcast.sendMessage("dice-plus/roll-request", rollRequest);
     };
 
-    if (!isDiceReady) return <span>{segment.content}</span>;
+    if (!active) return <span>{segment.content}</span>;
 
     return (
         <span
@@ -220,16 +220,16 @@ const RollButton = ({ segment, isDiceReady }: { segment: any; isDiceReady: boole
     );
 };
 
-const renderMarkup = (text: string, isDiceReady: boolean) => {
+const renderMarkup = (text: string, active: boolean) => {
     const segments = render5etoolsText(text);
     return segments.map((s, i) => (
         <span key={i}>
-            {s.type === 'text' ? s.content : <RollButton segment={s} isDiceReady={isDiceReady} />}
+            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} />}
         </span>
     ));
 };
 
-const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.ReactNode => {
+const renderEntries = (entries: any[], activeDice: boolean, depth = 0): React.ReactNode => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
         if (e == null) return null;
@@ -238,7 +238,7 @@ const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.R
         if (typeof e === "string") {
             return (
                 <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>
-                    {renderMarkup(e, isDiceReady)}
+                    {renderMarkup(e, activeDice)}
                 </p>
             );
         }
@@ -251,8 +251,8 @@ const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.R
         if (type === "entries" || (!type && e.name && e.entries)) {
             return (
                 <div key={i} style={{ marginBottom: "6px" }}>
-                    <strong>{renderMarkup(e.name, isDiceReady)}. </strong>
-                    {renderEntries(e.entries, isDiceReady, depth)}
+                    <strong>{renderMarkup(e.name, activeDice)}. </strong>
+                    {renderEntries(e.entries, activeDice, depth)}
                 </div>
             );
         }
@@ -262,20 +262,20 @@ const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.R
             if (e.name && e.entry) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, isDiceReady)}.</strong></em>{" "}
-                        {renderMarkup(e.entry, isDiceReady)}
+                        <em><strong>{renderMarkup(e.name, activeDice)}.</strong></em>{" "}
+                        {renderMarkup(e.entry, activeDice)}
                     </div>
                 );
             }
             if (e.name && e.entries) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, isDiceReady)}.</strong></em>{" "}
-                        {renderEntries(e.entries, isDiceReady, depth)}
+                        <em><strong>{renderMarkup(e.name, activeDice)}.</strong></em>{" "}
+                        {renderEntries(e.entries, activeDice, depth)}
                     </div>
                 );
             }
-            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, isDiceReady)}</p>;
+            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice)}</p>;
         }
 
         // List
@@ -286,7 +286,7 @@ const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.R
                 <ul key={i} style={{ margin: "4px 0", paddingLeft: isHangNotitle ? "0" : "18px", listStyle: isHangNotitle ? "none" : "disc" }}>
                     {items.map((it: any, j: number) => (
                         <li key={j} style={{ marginBottom: "3px" }}>
-                            {renderEntries([it], isDiceReady, depth + 1)}
+                            {renderEntries([it], activeDice, depth + 1)}
                         </li>
                     ))}
                 </ul>
@@ -306,10 +306,10 @@ const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.R
                 }}>
                     {e.name && (
                         <div style={{ fontWeight: "bold", color: "#58180D", marginBottom: "4px" }}>
-                            {renderMarkup(e.name, isDiceReady)}
+                            {renderMarkup(e.name, activeDice)}
                         </div>
                     )}
-                    {e.entries && renderEntries(e.entries, isDiceReady, depth + 1)}
+                    {e.entries && renderEntries(e.entries, activeDice, depth + 1)}
                 </div>
             );
         }
@@ -321,14 +321,14 @@ const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.R
             const rows: any[][] = e.rows || [];
             return (
                 <div key={i} style={{ margin: "8px 0", overflowX: "auto" }}>
-                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, isDiceReady)}</div>}
+                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice)}</div>}
                     <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>
                         {colLabels.length > 0 && (
                             <thead>
                                 <tr>
                                     {colLabels.map((col: string, j: number) => (
                                         <th key={j} style={{ border: "1px solid #ccc", padding: "3px 6px", background: "#e8d5b7", textAlign: "left" }}>
-                                            {renderMarkup(col, isDiceReady)}
+                                            {renderMarkup(col, activeDice)}
                                         </th>
                                     ))}
                                 </tr>
@@ -340,9 +340,9 @@ const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.R
                                     {row.map((cell: any, k: number) => (
                                         <td key={k} style={{ border: "1px solid #ccc", padding: "3px 6px" }}>
                                             {typeof cell === "string"
-                                                ? renderMarkup(cell, isDiceReady)
+                                                ? renderMarkup(cell, activeDice)
                                                 : typeof cell === "object" && cell?.type === "cell"
-                                                    ? renderMarkup(cell.entry || cell.exact || "", isDiceReady)
+                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice)
                                                     : String(cell ?? "")}
                                         </td>
                                     ))}
@@ -355,8 +355,8 @@ const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.R
         }
 
         // Fallback — try to render entries/entry if present
-        if (e.entries) return renderEntries(e.entries, isDiceReady, depth);
-        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, isDiceReady)}</p>;
+        if (e.entries) return renderEntries(e.entries, activeDice, depth);
+        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice)}</p>;
 
         return null;
     });
@@ -366,14 +366,14 @@ const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.R
 // Spellcasting Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const renderSpellcasting = (spellcasting: any[], isDiceReady: boolean) => {
+const renderSpellcasting = (spellcasting: any[], activeDice: boolean) => {
     if (!spellcasting || !Array.isArray(spellcasting)) return null;
     return spellcasting.map((s, i) => (
         <div key={i} style={{ marginBottom: "12px", fontSize: "13px" }}>
             <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
                 {s.name || "Spellcasting"}
             </h3>
-            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, isDiceReady)}</div>}
+            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, activeDice)}</div>}
 
             {/* At will */}
             {s.will && (
@@ -382,7 +382,7 @@ const renderSpellcasting = (spellcasting: any[], isDiceReady: boolean) => {
                     {s.will.map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice)}
                         </span>
                     ))}
                 </p>
@@ -399,7 +399,7 @@ const renderSpellcasting = (spellcasting: any[], isDiceReady: boolean) => {
                         {(v as any[]).map((sp: any, j: number) => (
                             <span key={j}>
                                 {j > 0 && ", "}
-                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady)}
+                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice)}
                             </span>
                         ))}
                     </p>
@@ -417,13 +417,13 @@ const renderSpellcasting = (spellcasting: any[], isDiceReady: boolean) => {
                     {(data.spells || []).map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice)}
                         </span>
                     ))}
                 </p>
             ))}
 
-            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, isDiceReady)}</div>}
+            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, activeDice)}</div>}
         </div>
     ));
 };
@@ -443,7 +443,7 @@ const getModifier = (score: number) => {
     return mod >= 0 ? `+${mod}` : `${mod}`;
 };
 
-const AbilityTable = ({ monster, isDiceReady }: { monster: any; isDiceReady: boolean }) => {
+const AbilityTable = ({ monster, active }: { monster: any; active: boolean }) => {
     const abilities = ["str", "dex", "con", "int", "wis", "cha"];
     return (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", textAlign: "center", borderTop: "1px solid #58180D", borderBottom: "1px solid #58180D", padding: "8px 0", margin: "8px 0" }}>
@@ -454,7 +454,7 @@ const AbilityTable = ({ monster, isDiceReady }: { monster: any; isDiceReady: boo
                         {monster[ab] ?? 10} (
                         <RollButton 
                             segment={{ type: 'roll', content: getModifier(monster[ab] ?? 10), formula: `1d20${getModifier(monster[ab] ?? 10)}`, label: `${ab.toUpperCase()} Check` }} 
-                            isDiceReady={isDiceReady} 
+                            active={active} 
                         />)
                     </div>
                 </div>
@@ -487,6 +487,7 @@ export default function ViewPopover() {
     const [tokenId, setTokenId] = useState<string | null>(null);
     const [error, setError] = useState<string>("");
     const [isDiceReady, setIsDiceReady] = useState(false);
+    const [forceDice, setForceDice] = useState(false);
 
     useEffect(() => {
         let pingInterval: any;
@@ -513,18 +514,17 @@ export default function ViewPopover() {
 
                     // --- Dice handshake ---
                     const requestId = Math.random().toString(36).substring(7);
-                    unstop = OBR.broadcast.onMessage("dice-plus/isReady", (msg: any) => {
-                        if (msg && msg.data && msg.data.ready === true) {
+                    unstop = OBR.broadcast.onMessage("dice-plus/isReady", (data: any) => {
+                        if (data && data.ready === true) {
                             setIsDiceReady(true);
-                            if (pingInterval) clearInterval(pingInterval);
                         }
                     });
 
                     const doPing = () => {
-                        OBR.broadcast.sendMessage("dice-plus/isReady", { requestId, timestamp: Date.now() });
+                        OBR.broadcast.sendMessage("dice-plus/isReady", { requestId, timestamp: Date.now(), source: EXTENSION_ID });
                     };
                     doPing();
-                    pingInterval = setInterval(doPing, 1500);
+                    pingInterval = setInterval(doPing, 1000);
 
                 } catch (err: any) {
                     setError(`Failed to load: ${err.message}`);
@@ -565,8 +565,23 @@ export default function ViewPopover() {
     }
 
     if (!monster) {
-        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.4.0)...</div>;
+        return (
+            <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>
+                <div>Loading (v1.4.2)...</div>
+                <div style={{ marginTop: "12px", fontSize: "11px", opacity: 0.6 }}>
+                    Waiting for Dice+ handshake... 
+                    <button 
+                        onClick={() => setForceDice(true)}
+                        style={{ background: "none", border: "none", color: "#58180D", textDecoration: "underline", cursor: "pointer", padding: "0 4px" }}
+                    >
+                        Force Enable Rolling
+                    </button>
+                </div>
+            </div>
+        );
     }
+
+    const activeDice = isDiceReady || forceDice;
 
     // ── Derived display values ──────────────────────────────────────────────
 
@@ -586,7 +601,7 @@ export default function ViewPopover() {
                     {k.toUpperCase()}{" "}
                     <RollButton 
                         segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k.toUpperCase()} Save` }} 
-                        isDiceReady={isDiceReady} 
+                        active={activeDice} 
                     />
                 </span>
             ))}
@@ -601,7 +616,7 @@ export default function ViewPopover() {
                     {k.charAt(0).toUpperCase() + k.slice(1)}{" "}
                     <RollButton 
                         segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k} Check` }} 
-                        isDiceReady={isDiceReady} 
+                        active={activeDice} 
                     />
                 </span>
             ))}
@@ -659,7 +674,7 @@ export default function ViewPopover() {
             <MetadataLine label="Hit Points" value={hpText} />
             <MetadataLine label="Speed" value={speedText} />
 
-            <AbilityTable monster={monster} isDiceReady={isDiceReady} />
+            <AbilityTable monster={monster} active={activeDice} />
 
             {/* Secondary stats */}
             <div style={{ marginBottom: "8px" }}>
@@ -680,18 +695,18 @@ export default function ViewPopover() {
             {/* Traits */}
             {monster.trait && (
                 <div style={{ marginBottom: "12px" }}>
-                    {renderEntries(monster.trait, isDiceReady)}
+                    {renderEntries(monster.trait, activeDice)}
                 </div>
             )}
 
             {/* Spellcasting (within traits) */}
-            {monster.spellcasting && renderSpellcasting(monster.spellcasting, isDiceReady)}
+            {monster.spellcasting && renderSpellcasting(monster.spellcasting, activeDice)}
 
             {/* Actions */}
             {monster.action && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Actions" />
-                    {renderEntries(monster.action, isDiceReady)}
+                    {renderEntries(monster.action, activeDice)}
                 </div>
             )}
 
@@ -699,7 +714,7 @@ export default function ViewPopover() {
             {monster.bonus && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Bonus Actions" />
-                    {renderEntries(monster.bonus, isDiceReady)}
+                    {renderEntries(monster.bonus, activeDice)}
                 </div>
             )}
 
@@ -707,7 +722,7 @@ export default function ViewPopover() {
             {monster.reaction && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Reactions" />
-                    {renderEntries(monster.reaction, isDiceReady)}
+                    {renderEntries(monster.reaction, activeDice)}
                 </div>
             )}
 
@@ -720,7 +735,7 @@ export default function ViewPopover() {
                             {legendaryPreamble}
                         </p>
                     )}
-                    {renderEntries(monster.legendary, isDiceReady)}
+                    {renderEntries(monster.legendary, activeDice)}
                 </div>
             )}
 
@@ -730,10 +745,10 @@ export default function ViewPopover() {
                     <SectionHeader title="Mythic Actions" />
                     {monster.mythicHeader && (
                         <p style={{ fontStyle: "italic", fontSize: "13px", marginBottom: "8px" }}>
-                            {renderEntries(monster.mythicHeader, isDiceReady)}
+                            {renderEntries(monster.mythicHeader, activeDice)}
                         </p>
                     )}
-                    {renderEntries(monster.mythic, isDiceReady)}
+                    {renderEntries(monster.mythic, activeDice)}
                 </div>
             )}
 
@@ -751,6 +766,13 @@ export default function ViewPopover() {
                 </div>
             )}
 
+            {/* Footer / Debug */}
+            <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between" }}>
+                <span>v1.4.2</span>
+                <span style={{ color: activeDice ? "#080" : "#800" }}>
+                    Dice Engine: {activeDice ? "READY" : "OFFLINE"}
+                </span>
+            </div>
         </div>
     );
 }
