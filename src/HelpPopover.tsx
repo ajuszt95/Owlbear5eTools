@@ -59,11 +59,8 @@ export default function HelpPopover() {
                     fontWeight: 800,
                     letterSpacing: "-0.5px"
                 }}>
-                    DM Toolbox
+                    5e.tools Integration
                 </h2>
-                <p style={{ margin: "4px 0 0 0", color: "#888", fontSize: "14px", fontWeight: 500 }}>
-                    5e.tools Integration v1.2.4
-                </p>
             </header>
 
             {/* QUICK SPAWN SECTION */}
@@ -85,7 +82,6 @@ export default function HelpPopover() {
                     <ul style={{ margin: "6px 0 0 0", paddingLeft: "18px", lineHeight: "1.4" }}>
                         <li>Standard: <code>bestiary.html#monster_source</code></li>
                         <li>Direct: <code>bestiary/monster-source.html</code></li>
-                        <li>Advanced: <code>index.html?page=bestiary...&hash=monster_source</code></li>
                     </ul>
                 </div>
 
@@ -161,7 +157,7 @@ export default function HelpPopover() {
             <section style={{ marginBottom: "24px" }}>
                 <h3 style={{ color: "#58180D", fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>Removing a Statblock</h3>
                 <p style={{ margin: 0, fontSize: "14px" }}>
-                    Open the 5e Tools view on a token and click <strong>"Remove Statblock"</strong> to reset all linked data.
+                    Open the 5e Tools view on a token and click <strong>"Remove"</strong> to reset all linked data.
                 </p>
             </section>
 
@@ -175,7 +171,7 @@ export default function HelpPopover() {
                 justifyContent: "space-between"
             }}>
                 <span>Created by ajuszt95</span>
-                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.2.4</span>
+                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.3.3</span>
             </footer>
         </div>
     );
