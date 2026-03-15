@@ -5,80 +5,117 @@
 export function render5etoolsText(text: string): string {
     if (!text) return "";
 
-    return text
-        // 1. Attack type tags — most specific first (combined types)
-        .replace(/{@atk\s+mw,rw(?:\|[^}]*)?}/gi, "Melee or Ranged Weapon Attack:")
-        .replace(/{@atk\s+ms,rs(?:\|[^}]*)?}/gi, "Melee or Ranged Spell Attack:")
-        .replace(/{@atk\s+mw(?:\|[^}]*)?}/gi, "Melee Weapon Attack:")
-        .replace(/{@atk\s+rw(?:\|[^}]*)?}/gi, "Ranged Weapon Attack:")
-        .replace(/{@atk\s+ms(?:\|[^}]*)?}/gi, "Melee Spell Attack:")
-        .replace(/{@atk\s+rs(?:\|[^}]*)?}/gi, "Ranged Spell Attack:")
-        .replace(/{@atk\s+m(?:\|[^}]*)?}/gi, "Melee Attack Roll:")
-        .replace(/{@atk\s+r(?:\|[^}]*)?}/gi, "Ranged Attack Roll:")
-        // Catch-all for any remaining atk combos
-        .replace(/{@atk\s+[^}]+}/gi, "Attack:")
+    // Use a single regex pass to find all {@tag content|pipe|...} blocks
+    return text.replace(/{@(\w+)\s*([^}]+)}/gi, (_, tag, content) => {
+        const parts = content.split('|');
+        const rawValue = parts[0].trim();
 
-        // 2. Roll/DC tags
-        .replace(/{@hit\s+([-+]?\d+)(?:\|[^}]*)?}/gi, (_, p1) => {
-            const num = parseInt(p1);
-            return num >= 0 ? `+${num}` : num.toString();
-        })
-        .replace(/{@dc\s+(\d+)(?:\|[^}]*)?}/gi, "DC $1")
-        .replace(/{@sav\s+(int|wis|cha|str|dex|con)(?:\|[^}]*)?}/gi, (_, p1) => {
-            const map: Record<string, string> = {
-                str: "Strength", dex: "Dexterity", con: "Constitution",
-                int: "Intelligence", wis: "Wisdom", cha: "Charisma"
-            };
-            return `${map[p1.toLowerCase()] || p1} Saving Throw:`;
-        })
-        .replace(/{@d20\s+([-+]?\d+)(?:\|[^}]*)?}/gi, "$1")
-        .replace(/{@h(?:\|[^}]*)?}/gi, "Hit:")
-        .replace(/{@recharge\s+(\d+)(?:\|[^}]*)?}/gi, "(Recharge $1\u20136)")
-        .replace(/{@recharge(?:\|[^}]*)?}/gi, "(Recharge 6)")
+        switch (tag.toLowerCase()) {
+            case "atk":
+                switch (rawValue) {
+                    case "mw,rw": return "Melee or Ranged Weapon Attack:";
+                    case "ms,rs": return "Melee or Ranged Spell Attack:";
+                    case "mw": return "Melee Weapon Attack:";
+                    case "rw": return "Ranged Weapon Attack:";
+                    case "ms": return "Melee Spell Attack:";
+                    case "rs": return "Ranged Spell Attack:";
+                    case "m": return "Melee Attack Roll:";
+                    case "r": return "Ranged Attack Roll:";
+                    default: return "Attack:";
+                }
 
-        // 3. Formatting tags
-        .replace(/{@(?:i|italic)\s+([^}|]+)(?:\|[^}]*)?\}/gi, "$1")
-        .replace(/{@(?:b|bold)\s+([^}|]+)(?:\|[^}]*)?\}/gi, "$1")
-        .replace(/{@u\s+([^}|]+)(?:\|[^}]*)?\}/gi, "$1")
-        .replace(/{@s\s+([^}|]+)(?:\|[^}]*)?\}/gi, "$1")
-        .replace(/{@sup\s+([^}|]+)(?:\|[^}]*)?\}/gi, "$1")
-        .replace(/{@sub\s+([^}|]+)(?:\|[^}]*)?\}/gi, "$1")
-        .replace(/{@code\s+([^}|]+)(?:\|[^}]*)?\}/gi, "$1")
+            case "hit":
+                const hitNum = parseInt(rawValue);
+                return hitNum >= 0 ? `+${hitNum}` : hitNum.toString();
 
-        // 4. Dice/damage
-        .replace(/{@(?:dice|damage|scaledice|scaledamage)\s+([^|}]+)(?:\|[^}]*)?\}/gi, "$1")
+            case "dc":
+                return `DC ${rawValue}`;
 
-        // 5. Notes/comments
-        .replace(/{@note\s+([^}|]+)(?:\|[^}]*)?\}/gi, "$1")
+            case "sav":
+                const savMap: Record<string, string> = {
+                    str: "Strength", dex: "Dexterity", con: "Constitution",
+                    int: "Intelligence", wis: "Wisdom", cha: "Charisma"
+                };
+                return `${savMap[rawValue.toLowerCase()] || rawValue} Saving Throw:`;
 
-        // 6. Quick reference / filter
-        .replace(/{@(?:quickref|filter)\s+([^|}]+)(?:\|[^}]*)?\}/gi, "$1")
+            case "d20":
+                return rawValue;
 
-        // 7. Status/Condition/Skill/Sense...
-        .replace(/{@(?:status|condition|skill|sense|action|item|spell|creature|feat|background|race|class|subclass|vehicle|object|hazard|reward|optfeature|variantrule|table|language|charoption|deity|psionic|trap|disease|curse|itemMastery|ability|classFeature|subclassFeature)\s+([^|}]+)(?:\|[^}]*)?\}/gi, "$1")
+            case "h":
+                return "Hit:";
 
-        // 8. Area tags
-        .replace(/{@area\s+([^|}]+)(?:\|[^}]*)?\}/gi, "$1")
+            case "recharge":
+                return rawValue ? `(Recharge ${rawValue}\u20136)` : "(Recharge 6)";
 
-        // 9. Special action results
-        .replace(/{@actSaveFail(?:\|[^}]*)?}/gi, "Failure:")
-        .replace(/{@actSaveSuccess(?:\|[^}]*)?}/gi, "Success:")
-        .replace(/{@actSaveSuccessFail(?:\|[^}]*)?}/gi, "Failure or Success:")
+            case "actsavefail":
+                return "Failure:";
 
-        // 10. Hit/miss results
-        .replace(/{@miss(?:\|[^}]*)?}/gi, "Miss:")
+            case "actsavesuccess":
+                return "Success:";
 
-        // 11. Generic catch-all
-        .replace(/{@\w+\s+([^|}]+)(?:\|[^}]*)?\}/gi, "$1")
+            case "actsavesuccessfail":
+                return "Failure or Success:";
 
-        // 12. Final cleanup — remove any leftover empty tags or lone braces
-        .replace(/{@[^}]*}/g, "")
+            case "miss":
+                return "Miss:";
 
-        // 13. Manual cleanup of known artifact strings
-        .replace(/\[Area of Effect\]/g, "")
-        .replace(/\|XPHB/g, "")
-        .replace(/\|P[a-z]+/gi, "") // Remove common source tags like |PHB, |PHB2024
+            case "i":
+            case "italic":
+            case "b":
+            case "bold":
+            case "u":
+            case "s":
+            case "sup":
+            case "sub":
+            case "code":
+            case "dice":
+            case "damage":
+            case "scaledice":
+            case "scaledamage":
+            case "note":
+            case "quickref":
+            case "filter":
+            case "status":
+            case "condition":
+            case "skill":
+            case "sense":
+            case "action":
+            case "item":
+            case "spell":
+            case "creature":
+            case "feat":
+            case "background":
+            case "race":
+            case "class":
+            case "subclass":
+            case "vehicle":
+            case "object":
+            case "hazard":
+            case "reward":
+            case "optfeature":
+            case "variantrule":
+            case "table":
+            case "language":
+            case "charoption":
+            case "deity":
+            case "psionic":
+            case "trap":
+            case "disease":
+            case "curse":
+            case "itemmastery":
+            case "ability":
+            case "classfeature":
+            case "subclassfeature":
+            case "area":
+                return rawValue;
 
-        // Final trim
-        .trim();
+            default:
+                // Generic catch-all: return the first part
+                return rawValue;
+        }
+    })
+    // Final cleanup of leftover braces or common artifacts
+    .replace(/{@[^}]*}/g, "")
+    .replace(/\[Area of Effect\]/g, "")
+    .trim();
 }
