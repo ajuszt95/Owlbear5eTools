@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID } from "./Background";
-import { render5etoolsText } from "./utils/renderer";
+import { render5etoolsText, render5etoolsPlainText } from "./utils/renderer";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Constants & lookup tables
@@ -93,7 +93,7 @@ function formatSpeed(speed: any): string {
         } else if (typeof v === "object") {
             const obj = v as any;
             const num = obj.number ?? 0;
-            const cond = obj.condition ? ` ${obj.condition}` : "";
+            const cond = obj.condition ? ` ${render5etoolsPlainText(obj.condition)}` : "";
             display = `${num} ft.${cond}`;
         } else {
             display = `${v}`;
@@ -114,9 +114,9 @@ function formatAC(ac: any[]): string {
         if (typeof a === "number") return `${a}`;
         if (typeof a === "object") {
             const base = a.ac ?? "";
-            const condition = a.condition ? ` ${render5etoolsText(a.condition)}` : "";
+            const condition = a.condition ? ` ${render5etoolsPlainText(a.condition)}` : "";
             if (a.from && a.from.length > 0) {
-                const fromText = a.from.map((f: string) => render5etoolsText(f)).join(", ");
+                const fromText = a.from.map((f: string) => render5etoolsPlainText(f)).join(", ");
                 return `${base} (${fromText})${condition}`;
             }
             return `${base}${condition}`;
@@ -137,7 +137,7 @@ function formatDamageList(list: any[]): string {
         if (typeof item === "object") {
             // Could have: immune/resist/vulnerable key + note
             const damageTypes: string[] = item.immune || item.resist || item.vulnerable || [];
-            const note: string = item.note ? ` (${item.note})` : "";
+            const note: string = item.note ? ` (${render5etoolsPlainText(item.note)})` : "";
             return damageTypes.join(", ") + note;
         }
         return String(item);
@@ -151,7 +151,7 @@ function formatConditionImmune(list: any[]): string {
         // Can be objects with condition + note
         if (typeof item === "object") {
             const conds = item.conditionImmune || [];
-            const note = item.note ? ` (${item.note})` : "";
+            const note = item.note ? ` (${render5etoolsPlainText(item.note)})` : "";
             return conds.join(", ") + note;
         }
         return String(item);
@@ -379,7 +379,12 @@ const renderSpellcasting = (spellcasting: any[], isDiceReady: boolean) => {
             {s.will && (
                 <p style={{ margin: "4px 0" }}>
                     <strong>At will: </strong>
-                    {s.will.map((sp: any) => renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady))}
+                    {s.will.map((sp: any, j: number) => (
+                        <span key={j}>
+                            {j > 0 && ", "}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady)}
+                        </span>
+                    ))}
                 </p>
             )}
 
@@ -391,7 +396,12 @@ const renderSpellcasting = (spellcasting: any[], isDiceReady: boolean) => {
                 return (
                     <p key={k} style={{ margin: "4px 0" }}>
                         <strong>{label}: </strong>
-                        {(v as any[]).map((sp: any) => renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady))}
+                        {(v as any[]).map((sp: any, j: number) => (
+                            <span key={j}>
+                                {j > 0 && ", "}
+                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady)}
+                            </span>
+                        ))}
                     </p>
                 );
             })}
@@ -404,7 +414,12 @@ const renderSpellcasting = (spellcasting: any[], isDiceReady: boolean) => {
                             ? "Cantrips (at will)"
                             : `${getOrdinal(parseInt(level))} level (${data.slots ?? 0} slot${data.slots !== 1 ? "s" : ""})`}:{" "}
                     </strong>
-                    {(data.spells || []).map((sp: any) => renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady))}
+                    {(data.spells || []).map((sp: any, j: number) => (
+                        <span key={j}>
+                            {j > 0 && ", "}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady)}
+                        </span>
+                    ))}
                 </p>
             ))}
 
@@ -428,14 +443,20 @@ const getModifier = (score: number) => {
     return mod >= 0 ? `+${mod}` : `${mod}`;
 };
 
-const AbilityTable = ({ monster }: { monster: any }) => {
+const AbilityTable = ({ monster, isDiceReady }: { monster: any; isDiceReady: boolean }) => {
     const abilities = ["str", "dex", "con", "int", "wis", "cha"];
     return (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", textAlign: "center", borderTop: "1px solid #58180D", borderBottom: "1px solid #58180D", padding: "8px 0", margin: "8px 0" }}>
             {abilities.map(ab => (
                 <div key={ab}>
                     <div style={{ fontWeight: "bold", textTransform: "uppercase", fontSize: "11px", color: "#58180D" }}>{ab}</div>
-                    <div style={{ fontSize: "14px" }}>{monster[ab] ?? 10} ({getModifier(monster[ab] ?? 10)})</div>
+                    <div style={{ fontSize: "14px" }}>
+                        {monster[ab] ?? 10} (
+                        <RollButton 
+                            segment={{ type: 'roll', content: getModifier(monster[ab] ?? 10), formula: `1d20${getModifier(monster[ab] ?? 10)}`, label: `${ab.toUpperCase()} Check` }} 
+                            isDiceReady={isDiceReady} 
+                        />)
+                    </div>
                 </div>
             ))}
         </div>
@@ -468,6 +489,9 @@ export default function ViewPopover() {
     const [isDiceReady, setIsDiceReady] = useState(false);
 
     useEffect(() => {
+        let pingInterval: any;
+        let unstop: (() => void) | undefined;
+
         const initView = async () => {
             OBR.onReady(async () => {
                 try {
@@ -488,19 +512,19 @@ export default function ViewPopover() {
                     setMonster(monsterMetadata);
 
                     // --- Dice handshake ---
-                    // Listen for Dice+ ready signal
-                    const unstop = OBR.broadcast.onMessage("dice-plus/isReady", (msg: any) => {
-                        console.log("ViewPopover: Received Dice+ signal", msg);
-                        if (msg && msg.data && msg.data.ready) {
+                    const requestId = Math.random().toString(36).substring(7);
+                    unstop = OBR.broadcast.onMessage("dice-plus/isReady", (msg: any) => {
+                        if (msg && msg.data && msg.data.ready === true) {
                             setIsDiceReady(true);
+                            if (pingInterval) clearInterval(pingInterval);
                         }
                     });
 
-                    // Proactively ping
-                    OBR.broadcast.sendMessage("dice-plus/isReady", { ready: true });
-                    
-                    // Cleanup listener on unmount
-                    return () => unstop();
+                    const doPing = () => {
+                        OBR.broadcast.sendMessage("dice-plus/isReady", { requestId, timestamp: Date.now() });
+                    };
+                    doPing();
+                    pingInterval = setInterval(doPing, 1500);
 
                 } catch (err: any) {
                     setError(`Failed to load: ${err.message}`);
@@ -508,6 +532,11 @@ export default function ViewPopover() {
             });
         };
         initView();
+
+        return () => {
+            if (unstop) unstop();
+            if (pingInterval) clearInterval(pingInterval);
+        };
     }, []);
 
     const handleRemove = async () => {
@@ -549,12 +578,35 @@ export default function ViewPopover() {
     const hpText = `${monster.hp?.average ?? "??"} ${monster.hp?.formula ? `(${monster.hp.formula})` : ""}`.trim();
     const speedText = formatSpeed(monster.speed);
 
-    const saves = monster.save
-        ? Object.entries(monster.save).map(([k, v]) => `${k.toUpperCase()} ${v}`).join(", ")
-        : null;
-    const skills = monster.skill
-        ? Object.entries(monster.skill).map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)} ${v}`).join(", ")
-        : null;
+    const saves = monster.save ? (
+        <span>
+            {Object.entries(monster.save).map(([k, v], i) => (
+                <span key={k}>
+                    {i > 0 && ", "}
+                    {k.toUpperCase()}{" "}
+                    <RollButton 
+                        segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k.toUpperCase()} Save` }} 
+                        isDiceReady={isDiceReady} 
+                    />
+                </span>
+            ))}
+        </span>
+    ) : null;
+
+    const skills = monster.skill ? (
+        <span>
+            {Object.entries(monster.skill).map(([k, v], i) => (
+                <span key={k}>
+                    {i > 0 && ", "}
+                    {k.charAt(0).toUpperCase() + k.slice(1)}{" "}
+                    <RollButton 
+                        segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k} Check` }} 
+                        isDiceReady={isDiceReady} 
+                    />
+                </span>
+            ))}
+        </span>
+    ) : null;
     const senses = monster.senses
         ? (Array.isArray(monster.senses) ? monster.senses.join(", ") : monster.senses)
         : null;
@@ -607,7 +659,7 @@ export default function ViewPopover() {
             <MetadataLine label="Hit Points" value={hpText} />
             <MetadataLine label="Speed" value={speedText} />
 
-            <AbilityTable monster={monster} />
+            <AbilityTable monster={monster} isDiceReady={isDiceReady} />
 
             {/* Secondary stats */}
             <div style={{ marginBottom: "8px" }}>

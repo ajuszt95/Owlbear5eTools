@@ -126,3 +126,11 @@ export function render5etoolsText(text: string): RenderSegment[] {
         return seg;
     });
 }
+
+/**
+ * Helper to get just the plain text from 5e.tools markup.
+ * Use this for metadata fields that don't need dice roll buttons.
+ */
+export function render5etoolsPlainText(text: string): string {
+    return render5etoolsText(text).map(s => s.content).join("");
+}
