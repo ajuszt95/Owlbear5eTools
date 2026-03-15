@@ -533,18 +533,21 @@ export default function ViewPopover() {
 
                     // --- Dice handshake ---
                     const requestId = Math.random().toString(36).substring(7);
-                    console.log(`[DiceHandshake] Starting shotgun ping (requestId: ${requestId}) v1.4.5`);
+                    console.log(`[DiceHandshake] Initializing...`);
                     
                     const handshakeChannels = ["dice-plus/isReady", "dice/isReady", "dice-plus/is-ready", "dice/is-ready", "dice-plus/ready"];
                     const unstopFns: (() => void)[] = [];
 
                     handshakeChannels.forEach(ch => {
                         unstopFns.push(OBR.broadcast.onMessage(ch, (data: any) => {
-                            console.log(`[DiceHandshake] Received on ${ch}:`, JSON.stringify(data));
                             const payload = data?.data || data;
                             if (payload && payload.ready === true && payload.requestId === requestId) {
-                                console.log(`[DiceHandshake] Dice+ confirmed READY on ${ch}!`);
+                                console.log(`[DiceHandshake] Dice+ confirmed READY!`);
                                 setIsDiceReady(true);
+                                if (pingInterval) {
+                                    clearInterval(pingInterval);
+                                    pingInterval = null;
+                                }
                             }
                         }));
                     });
