@@ -176,7 +176,60 @@ function formatCR(cr: any): { crText: string; lairText: string; xp: string } {
 // Entry Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
+const RollButton = ({ segment, isDiceReady }: { segment: any; isDiceReady: boolean }) => {
+    const handleRoll = async () => {
+        if (!isDiceReady) return;
+        const player = await OBR.player.getName();
+        const playerId = await OBR.player.getId();
+        
+        const rollRequest = {
+            rollId: Math.random().toString(36).substring(7),
+            playerId: playerId,
+            playerName: player,
+            rollTarget: 'everyone',
+            diceNotation: segment.formula,
+            showResults: true,
+            timestamp: Date.now(),
+            source: EXTENSION_ID,
+            label: segment.label
+        };
+
+        await OBR.broadcast.sendMessage("dice-plus/roll-request", rollRequest);
+    };
+
+    if (!isDiceReady) return <span>{segment.content}</span>;
+
+    return (
+        <span
+            onClick={handleRoll}
+            title={`Click to roll ${segment.formula}`}
+            style={{
+                color: "#58180D",
+                textDecoration: "underline dotted",
+                cursor: "pointer",
+                fontWeight: "bold",
+                padding: "0 2px",
+                borderRadius: "3px",
+                transition: "background 0.2s",
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = "rgba(88, 24, 13, 0.1)")}
+            onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+        >
+            {segment.content}
+        </span>
+    );
+};
+
+const renderMarkup = (text: string, isDiceReady: boolean) => {
+    const segments = render5etoolsText(text);
+    return segments.map((s, i) => (
+        <span key={i}>
+            {s.type === 'text' ? s.content : <RollButton segment={s} isDiceReady={isDiceReady} />}
+        </span>
+    ));
+};
+
+const renderEntries = (entries: any[], isDiceReady: boolean, depth = 0): React.ReactNode => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
         if (e == null) return null;
@@ -185,7 +238,7 @@ const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
         if (typeof e === "string") {
             return (
                 <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>
-                    {render5etoolsText(e)}
+                    {renderMarkup(e, isDiceReady)}
                 </p>
             );
         }
@@ -198,8 +251,8 @@ const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
         if (type === "entries" || (!type && e.name && e.entries)) {
             return (
                 <div key={i} style={{ marginBottom: "6px" }}>
-                    <strong>{render5etoolsText(e.name)}. </strong>
-                    {renderEntries(e.entries, depth)}
+                    <strong>{renderMarkup(e.name, isDiceReady)}. </strong>
+                    {renderEntries(e.entries, isDiceReady, depth)}
                 </div>
             );
         }
@@ -209,20 +262,20 @@ const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
             if (e.name && e.entry) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{render5etoolsText(e.name)}.</strong></em>{" "}
-                        {render5etoolsText(e.entry)}
+                        <em><strong>{renderMarkup(e.name, isDiceReady)}.</strong></em>{" "}
+                        {renderMarkup(e.entry, isDiceReady)}
                     </div>
                 );
             }
             if (e.name && e.entries) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{render5etoolsText(e.name)}.</strong></em>{" "}
-                        {renderEntries(e.entries, depth)}
+                        <em><strong>{renderMarkup(e.name, isDiceReady)}.</strong></em>{" "}
+                        {renderEntries(e.entries, isDiceReady, depth)}
                     </div>
                 );
             }
-            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{render5etoolsText(e.entry)}</p>;
+            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, isDiceReady)}</p>;
         }
 
         // List
@@ -233,7 +286,7 @@ const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
                 <ul key={i} style={{ margin: "4px 0", paddingLeft: isHangNotitle ? "0" : "18px", listStyle: isHangNotitle ? "none" : "disc" }}>
                     {items.map((it: any, j: number) => (
                         <li key={j} style={{ marginBottom: "3px" }}>
-                            {renderEntries([it], depth + 1)}
+                            {renderEntries([it], isDiceReady, depth + 1)}
                         </li>
                     ))}
                 </ul>
@@ -253,10 +306,10 @@ const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
                 }}>
                     {e.name && (
                         <div style={{ fontWeight: "bold", color: "#58180D", marginBottom: "4px" }}>
-                            {render5etoolsText(e.name)}
+                            {renderMarkup(e.name, isDiceReady)}
                         </div>
                     )}
-                    {e.entries && renderEntries(e.entries, depth + 1)}
+                    {e.entries && renderEntries(e.entries, isDiceReady, depth + 1)}
                 </div>
             );
         }
@@ -268,14 +321,14 @@ const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
             const rows: any[][] = e.rows || [];
             return (
                 <div key={i} style={{ margin: "8px 0", overflowX: "auto" }}>
-                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{caption}</div>}
+                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, isDiceReady)}</div>}
                     <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>
                         {colLabels.length > 0 && (
                             <thead>
                                 <tr>
                                     {colLabels.map((col: string, j: number) => (
                                         <th key={j} style={{ border: "1px solid #ccc", padding: "3px 6px", background: "#e8d5b7", textAlign: "left" }}>
-                                            {render5etoolsText(col)}
+                                            {renderMarkup(col, isDiceReady)}
                                         </th>
                                     ))}
                                 </tr>
@@ -287,9 +340,9 @@ const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
                                     {row.map((cell: any, k: number) => (
                                         <td key={k} style={{ border: "1px solid #ccc", padding: "3px 6px" }}>
                                             {typeof cell === "string"
-                                                ? render5etoolsText(cell)
+                                                ? renderMarkup(cell, isDiceReady)
                                                 : typeof cell === "object" && cell?.type === "cell"
-                                                    ? render5etoolsText(cell.entry || cell.exact || "")
+                                                    ? renderMarkup(cell.entry || cell.exact || "", isDiceReady)
                                                     : String(cell ?? "")}
                                         </td>
                                     ))}
@@ -302,8 +355,8 @@ const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
         }
 
         // Fallback — try to render entries/entry if present
-        if (e.entries) return renderEntries(e.entries, depth);
-        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{render5etoolsText(e.entry)}</p>;
+        if (e.entries) return renderEntries(e.entries, isDiceReady, depth);
+        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, isDiceReady)}</p>;
 
         return null;
     });
@@ -313,33 +366,32 @@ const renderEntries = (entries: any[], depth = 0): React.ReactNode => {
 // Spellcasting Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const renderSpellcasting = (spellcasting: any[]) => {
+const renderSpellcasting = (spellcasting: any[], isDiceReady: boolean) => {
     if (!spellcasting || !Array.isArray(spellcasting)) return null;
     return spellcasting.map((s, i) => (
         <div key={i} style={{ marginBottom: "12px", fontSize: "13px" }}>
             <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
                 {s.name || "Spellcasting"}
             </h3>
-            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries)}</div>}
+            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, isDiceReady)}</div>}
 
             {/* At will */}
             {s.will && (
                 <p style={{ margin: "4px 0" }}>
                     <strong>At will: </strong>
-                    {s.will.map((sp: any) => render5etoolsText(typeof sp === "string" ? sp : (sp.entry || sp.name || ""))).join(", ")}
+                    {s.will.map((sp: any) => renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady))}
                 </p>
             )}
 
             {/* Daily (e.g. "1e", "2", "3e") */}
             {s.daily && Object.entries(s.daily).map(([k, v]: [string, any]) => {
-                // k might be "1e" (each), "2e", "3", etc.
                 const count = k.replace("e", "");
                 const each = k.includes("e") ? " each" : "";
                 const label = `${count}/day${each}`;
                 return (
                     <p key={k} style={{ margin: "4px 0" }}>
                         <strong>{label}: </strong>
-                        {(v as any[]).map((sp: any) => render5etoolsText(typeof sp === "string" ? sp : (sp.entry || sp.name || ""))).join(", ")}
+                        {(v as any[]).map((sp: any) => renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady))}
                     </p>
                 );
             })}
@@ -352,11 +404,11 @@ const renderSpellcasting = (spellcasting: any[]) => {
                             ? "Cantrips (at will)"
                             : `${getOrdinal(parseInt(level))} level (${data.slots ?? 0} slot${data.slots !== 1 ? "s" : ""})`}:{" "}
                     </strong>
-                    {(data.spells || []).map((sp: any) => render5etoolsText(typeof sp === "string" ? sp : (sp.entry || sp.name || ""))).join(", ")}
+                    {(data.spells || []).map((sp: any) => renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), isDiceReady))}
                 </p>
             ))}
 
-            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries)}</div>}
+            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, isDiceReady)}</div>}
         </div>
     ));
 };
@@ -413,6 +465,7 @@ export default function ViewPopover() {
     const [monster, setMonster] = useState<any>(null);
     const [tokenId, setTokenId] = useState<string | null>(null);
     const [error, setError] = useState<string>("");
+    const [isDiceReady, setIsDiceReady] = useState(false);
 
     useEffect(() => {
         const initView = async () => {
@@ -433,6 +486,22 @@ export default function ViewPopover() {
                     if (!monsterMetadata) { setError("No data found. Try re-importing."); return; }
 
                     setMonster(monsterMetadata);
+
+                    // --- Dice handshake ---
+                    // Listen for Dice+ ready signal
+                    const unstop = OBR.broadcast.onMessage("dice-plus/isReady", (msg: any) => {
+                        console.log("ViewPopover: Received Dice+ signal", msg);
+                        if (msg && msg.data && msg.data.ready) {
+                            setIsDiceReady(true);
+                        }
+                    });
+
+                    // Proactively ping
+                    OBR.broadcast.sendMessage("dice-plus/isReady", { ready: true });
+                    
+                    // Cleanup listener on unmount
+                    return () => unstop();
+
                 } catch (err: any) {
                     setError(`Failed to load: ${err.message}`);
                 }
@@ -467,7 +536,7 @@ export default function ViewPopover() {
     }
 
     if (!monster) {
-        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.3.3)...</div>;
+        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.4.0)...</div>;
     }
 
     // ── Derived display values ──────────────────────────────────────────────
@@ -559,18 +628,18 @@ export default function ViewPopover() {
             {/* Traits */}
             {monster.trait && (
                 <div style={{ marginBottom: "12px" }}>
-                    {renderEntries(monster.trait)}
+                    {renderEntries(monster.trait, isDiceReady)}
                 </div>
             )}
 
             {/* Spellcasting (within traits) */}
-            {monster.spellcasting && renderSpellcasting(monster.spellcasting)}
+            {monster.spellcasting && renderSpellcasting(monster.spellcasting, isDiceReady)}
 
             {/* Actions */}
             {monster.action && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Actions" />
-                    {renderEntries(monster.action)}
+                    {renderEntries(monster.action, isDiceReady)}
                 </div>
             )}
 
@@ -578,7 +647,7 @@ export default function ViewPopover() {
             {monster.bonus && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Bonus Actions" />
-                    {renderEntries(monster.bonus)}
+                    {renderEntries(monster.bonus, isDiceReady)}
                 </div>
             )}
 
@@ -586,7 +655,7 @@ export default function ViewPopover() {
             {monster.reaction && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Reactions" />
-                    {renderEntries(monster.reaction)}
+                    {renderEntries(monster.reaction, isDiceReady)}
                 </div>
             )}
 
@@ -599,7 +668,7 @@ export default function ViewPopover() {
                             {legendaryPreamble}
                         </p>
                     )}
-                    {renderEntries(monster.legendary)}
+                    {renderEntries(monster.legendary, isDiceReady)}
                 </div>
             )}
 
@@ -609,10 +678,10 @@ export default function ViewPopover() {
                     <SectionHeader title="Mythic Actions" />
                     {monster.mythicHeader && (
                         <p style={{ fontStyle: "italic", fontSize: "13px", marginBottom: "8px" }}>
-                            {renderEntries(monster.mythicHeader)}
+                            {renderEntries(monster.mythicHeader, isDiceReady)}
                         </p>
                     )}
-                    {renderEntries(monster.mythic)}
+                    {renderEntries(monster.mythic, isDiceReady)}
                 </div>
             )}
 

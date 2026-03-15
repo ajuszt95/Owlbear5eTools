@@ -1,109 +1,128 @@
-/**
- * Cleans 5e.tools internal markup tags (e.g., {@hit 5}, {@dc 14}) into human-readable text.
- * Aims for parity with the official 5e.tools display.
- */
-export function render5etoolsText(text: string): string {
-    if (!text) return "";
+export type RenderSegment =
+    | { type: 'text'; content: string }
+    | { type: 'roll'; content: string; formula: string; label: string };
 
-    // One-pass robust tag replacement
-    return text.replace(/{@(\w+)(?:\s+([^}]+))?}/gi, (_, tag, content) => {
+/**
+ * Renders 5e.tools markup into an array of segments (text or rollable).
+ */
+export function render5etoolsText(text: string): RenderSegment[] {
+    if (!text) return [];
+
+    const segments: RenderSegment[] = [];
+    let lastIndex = 0;
+    const tagRegex = /{@(\w+)(?:\s+([^}]+))?}/gi;
+    let match;
+
+    while ((match = tagRegex.exec(text)) !== null) {
+        // Add preceding text
+        if (match.index > lastIndex) {
+            segments.push({ type: 'text', content: text.substring(lastIndex, match.index) });
+        }
+
+        const [_, tag, content] = match;
         const parts = (content || "").split('|');
         const rawValue = (parts[0] || "").trim();
         const lowTag = tag.toLowerCase();
 
         switch (lowTag) {
             case "atk":
-            case "atkr":
+            case "atkr": {
                 const lowValue = rawValue.toLowerCase();
-                // Specific 5e.tools mappings
-                if (lowValue === "mw") return "Melee Weapon Attack:";
-                if (lowValue === "rw") return "Ranged Weapon Attack:";
-                if (lowValue === "ms") return "Melee Spell Attack:";
-                if (lowValue === "rs") return "Ranged Spell Attack:";
-                if (lowValue === "mw,rw") return "Melee or Ranged Weapon Attack:";
-                if (lowValue === "ms,rs") return "Melee or Ranged Spell Attack:";
-                if (lowValue === "m") return "Melee Attack Roll:";
-                if (lowValue === "r") return "Ranged Attack Roll:";
-                return "Attack:";
+                let label = "Attack:";
+                if (lowValue === "mw") label = "Melee Weapon Attack:";
+                else if (lowValue === "rw") label = "Ranged Weapon Attack:";
+                else if (lowValue === "ms") label = "Melee Spell Attack:";
+                else if (lowValue === "rs") label = "Ranged Spell Attack:";
+                else if (lowValue === "mw,rw") label = "Melee or Ranged Weapon Attack:";
+                else if (lowValue === "ms,rs") label = "Melee or Ranged Spell Attack:";
+                else if (lowValue === "m") label = "Melee Attack Roll:";
+                else if (lowValue === "r") label = "Ranged Attack Roll:";
+                segments.push({ type: 'text', content: label });
+                break;
+            }
 
-            case "hit":
+            case "hit": {
                 const hitVal = parseInt(rawValue);
-                return isNaN(hitVal) ? rawValue : (hitVal >= 0 ? `+${hitVal}` : `${hitVal}`);
+                const display = isNaN(hitVal) ? rawValue : (hitVal >= 0 ? `+${hitVal}` : `${hitVal}`);
+                segments.push({ 
+                    type: 'roll', 
+                    content: display, 
+                    formula: `1d20${display}`, 
+                    label: "Attack Roll" 
+                });
+                break;
+            }
 
             case "dc":
-                return `DC ${rawValue}`;
+                segments.push({ type: 'text', content: "DC " });
+                segments.push({ 
+                    type: 'roll', 
+                    content: rawValue, 
+                    formula: "1d20", 
+                    label: `DC ${rawValue} Check` 
+                });
+                break;
 
             case "sav":
-            case "actsave":
+            case "actsave": {
                 const attr = rawValue.split(' ')[0].toLowerCase();
                 const savMap: Record<string, string> = {
                     str: "Strength", dex: "Dexterity", con: "Constitution",
                     int: "Intelligence", wis: "Wisdom", cha: "Charisma"
                 };
-                return `${savMap[attr] || rawValue} Saving Throw:`;
+                segments.push({ type: 'text', content: `${savMap[attr] || rawValue} Saving Throw:` });
+                break;
+            }
 
-            case "h": return "Hit: ";
-            case "recharge": return rawValue ? `(Recharge ${rawValue}\u20136)` : "(Recharge 6)";
-            case "actsavefail": return "Failure:";
-            case "actsavesuccess": return "Success:";
-            case "actsavesuccessfail": return "Failure or Success:";
-            case "actsavefailby": return "Failure by 5 or more:";
-            case "miss": return "Miss:";
-            case "d20": return rawValue;
+            case "h":
+                segments.push({ type: 'text', content: "Hit: " });
+                break;
 
-            case "i":
-            case "italic":
-            case "b":
-            case "bold":
-            case "u":
-            case "s":
-            case "sup":
-            case "sub":
-            case "code":
-            case "dice":
+            case "recharge":
+                const rechargeDisplay = rawValue ? `(Recharge ${rawValue}\u20136)` : "(Recharge 6)";
+                segments.push({ 
+                    type: 'roll', 
+                    content: rechargeDisplay, 
+                    formula: "1d6", 
+                    label: "Recharge" 
+                });
+                break;
+
             case "damage":
             case "scaledice":
             case "scaledamage":
-            case "note":
-            case "quickref":
-            case "filter":
-            case "status":
-            case "condition":
-            case "skill":
-            case "sense":
-            case "action":
-            case "item":
-            case "spell":
-            case "creature":
-            case "feat":
-            case "background":
-            case "race":
-            case "class":
-            case "subclass":
-            case "vehicle":
-            case "object":
-            case "hazard":
-            case "reward":
-            case "optfeature":
-            case "variantrule":
-            case "table":
-            case "language":
-            case "charoption":
-            case "deity":
-            case "psionic":
-            case "trap":
-            case "disease":
-            case "curse":
-            case "itemmastery":
-            case "ability":
-            case "classfeature":
-            case "subclassfeature":
-            case "area":
-            case "link":
-                return rawValue;
+            case "dice":
+                segments.push({ 
+                    type: 'roll', 
+                    content: rawValue, 
+                    formula: rawValue, 
+                    label: "Roll" 
+                });
+                break;
+
+            case "actsavefail": segments.push({ type: 'text', content: "Failure:" }); break;
+            case "actsavesuccess": segments.push({ type: 'text', content: "Success:" }); break;
+            case "actsavesuccessfail": segments.push({ type: 'text', content: "Failure or Success:" }); break;
+            case "actsavefailby": segments.push({ type: 'text', content: "Failure by 5 or more:" }); break;
+            case "miss": segments.push({ type: 'text', content: "Miss:" }); break;
+            case "d20": segments.push({ type: 'roll', content: rawValue, formula: "1d20", label: "d20" }); break;
 
             default:
-                return rawValue || "";
+                segments.push({ type: 'text', content: rawValue || "" });
         }
-    }).replace(/  +/g, ' ').trim();
+        lastIndex = tagRegex.lastIndex;
+    }
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+        segments.push({ type: 'text', content: text.substring(lastIndex) });
+    }
+
+    // Cleanup double spaces and trim individual segments if they represent text
+    return segments.map(seg => {
+        if (seg.type === 'text') {
+            return { ...seg, content: seg.content.replace(/  +/g, ' ') };
+        }
+        return seg;
+    });
 }
