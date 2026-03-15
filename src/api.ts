@@ -68,7 +68,9 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
         }
         // 2. Fallback to standard hash format: bestiary.html#aarakocra_lox
         else if (urlObj.hash && urlObj.hash.includes("_")) {
-            const hashParts = urlObj.hash.substring(1).split("_"); // remove leading #
+            // Decode the hash to handle encoded spaces (e.g. %20)
+            const decodedHash = decodeURIComponent(urlObj.hash.substring(1)); // remove leading #
+            const hashParts = decodedHash.split("_");
             source = hashParts.pop() || "";
             nameIdentifier = hashParts.join("_");
         }

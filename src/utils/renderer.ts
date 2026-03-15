@@ -13,8 +13,8 @@ export function render5etoolsText(text: string): string {
         .replace(/{@atk rw}/g, "Ranged Weapon Attack:")
         .replace(/{@atk ms}/g, "Melee Spell Attack:")
         .replace(/{@atk rs}/g, "Ranged Spell Attack:")
-        .replace(/{@atk m}/g, "Melee Attack:")
-        .replace(/{@atk r}/g, "Ranged Attack:")
+        .replace(/{@atk m}/g, "Melee Attack Roll:")
+        .replace(/{@atk r}/g, "Ranged Attack Roll:")
         // Catch-all for any remaining atk combos like mw,rw,ms,rs
         .replace(/{@atk [^}]+}/g, "Attack:")
 
@@ -24,6 +24,13 @@ export function render5etoolsText(text: string): string {
             return num >= 0 ? `+${num}` : num.toString();
         })
         .replace(/{@dc (\d+)}/g, "DC $1")
+        .replace(/{@sav (int|wis|cha|str|dex|con)}/gi, (_, p1) => {
+            const map: Record<string, string> = {
+                str: "Strength", dex: "Dexterity", con: "Constitution",
+                int: "Intelligence", wis: "Wisdom", cha: "Charisma"
+            };
+            return `${map[p1.toLowerCase()] || p1} Saving Throw:`;
+        })
         .replace(/{@d20 ([-+]?\d+)}/g, "$1")
         .replace(/{@h}/g, "Hit:")
         .replace(/{@recharge (\d+)}/g, "(Recharge $1\u20136)") // En-dash for range
@@ -60,6 +67,7 @@ export function render5etoolsText(text: string): string {
         // 9. Special action results
         .replace(/{@actSaveFail}/g, "Failure:")
         .replace(/{@actSaveSuccess}/g, "Success:")
+        .replace(/{@actSaveSuccessFail}/g, "Failure or Success:")
 
         // 10. Hit/miss results
         .replace(/{@miss}/g, "Miss:")
