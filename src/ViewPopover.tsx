@@ -467,7 +467,7 @@ export default function ViewPopover() {
     }
 
     if (!monster) {
-        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.2.6)...</div>;
+        return <div style={{ padding: "24px", textAlign: "center", color: "#666" }}>Loading (v1.2.7)...</div>;
     }
 
     // ── Derived display values ──────────────────────────────────────────────
