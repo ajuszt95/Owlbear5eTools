@@ -182,28 +182,37 @@ const RollButton = ({ segment, active }: { segment: any; active: boolean }) => {
         if (!active) return;
         
         try {
-            console.log("[RollButton] Fetching player info...");
             const player = await OBR.player.getName();
             const playerId = await OBR.player.getId();
-            console.log(`[RollButton] Player: ${player} (${playerId})`);
+            const ts = Date.now();
+            const rid = "roll_" + ts + "_" + Math.random().toString(36).substring(7);
             
-            const rollRequest = {
-                rollId: "roll_" + Date.now() + "_" + Math.random().toString(36).substring(7),
+            // Varied payloads to cover all bases
+            const fullPayload = {
+                rollId: rid,
                 playerId: playerId,
                 playerName: player,
                 rollTarget: 'everyone',
+                target: 'everyone',
                 diceNotation: segment.formula,
+                notation: segment.formula,
                 showResults: true,
-                timestamp: Date.now(),
-                source: EXTENSION_ID,
+                show: true,
+                timestamp: ts,
+                source: "5etools-obr",
                 label: segment.label
             };
+
+            const channels = ["dice-plus/roll-request", "dice/roll-request", "dice-plus/roll", "dice/roll"];
             
-            console.log("[RollButton] Sending dice-plus/roll-request:", JSON.stringify(rollRequest));
-            await OBR.broadcast.sendMessage("dice-plus/roll-request", rollRequest);
-            console.log("[RollButton] Message execution finished.");
+            console.log(`[RollButton] Shotgunning roll to ${channels.join(", ")}`);
+            for (const ch of channels) {
+                console.log(`[RollButton] Sending to ${ch}...`);
+                await OBR.broadcast.sendMessage(ch, fullPayload);
+            }
+            console.log("[RollButton] Shotgun firing complete.");
         } catch (err) {
-            console.error("[RollButton] CRITICAL ERROR during roll:", err);
+            console.error("[RollButton] ERROR during roll:", err);
         }
     };
 
@@ -524,20 +533,26 @@ export default function ViewPopover() {
 
                     // --- Dice handshake ---
                     const requestId = Math.random().toString(36).substring(7);
-                    console.log(`[DiceHandshake] Starting ping with requestId: ${requestId} for v1.4.4`);
-                    unstop = OBR.broadcast.onMessage("dice-plus/isReady", (data: any) => {
-                        console.log("[DiceHandshake] RAW response received:", JSON.stringify(data));
-                        // Some systems wrap the payload in .data, others don't.
-                        const payload = data?.data || data;
-                        if (payload && payload.ready === true) {
-                            console.log("[DiceHandshake] Dice+ confirmed READY via payload:", payload);
-                            setIsDiceReady(true);
-                        }
+                    console.log(`[DiceHandshake] Starting shotgun ping (requestId: ${requestId}) v1.4.5`);
+                    
+                    const handshakeChannels = ["dice-plus/isReady", "dice/isReady", "dice-plus/is-ready", "dice/is-ready", "dice-plus/ready"];
+                    const unstopFns: (() => void)[] = [];
+
+                    handshakeChannels.forEach(ch => {
+                        unstopFns.push(OBR.broadcast.onMessage(ch, (data: any) => {
+                            console.log(`[DiceHandshake] Received on ${ch}:`, JSON.stringify(data));
+                            const payload = data?.data || data;
+                            if (payload && (payload.ready === true || payload.isReady === true)) {
+                                console.log(`[DiceHandshake] Dice+ confirmed READY on ${ch}!`);
+                                setIsDiceReady(true);
+                            }
+                        }));
                     });
+                    unstop = () => unstopFns.forEach(fn => fn());
 
                     const doPing = () => {
-                        const pingPayload = { requestId, timestamp: Date.now(), source: EXTENSION_ID, request: true };
-                        OBR.broadcast.sendMessage("dice-plus/isReady", pingPayload);
+                        const pingPayload = { requestId, timestamp: Date.now(), source: "5etools-obr", request: true };
+                        handshakeChannels.forEach(ch => OBR.broadcast.sendMessage(ch, pingPayload));
                     };
                     doPing();
                     pingInterval = setInterval(doPing, 1000);
@@ -775,7 +790,7 @@ export default function ViewPopover() {
 
             {/* Footer / Debug */}
             <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>v1.4.4</span>
+                <span>v1.4.5</span>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     {!activeDice && (
                         <button 
