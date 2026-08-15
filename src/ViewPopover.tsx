@@ -677,7 +677,7 @@ export default function ViewPopover() {
 
     if (!monster) {
         return (
-            <div>Loading (v1.4.9)...</div>
+            <div>Loading (v1.5.0)...</div>
         );
     }
 
@@ -947,7 +947,7 @@ export default function ViewPopover() {
 
             {/* Footer / Debug */}
             <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>v1.4.9</span>
+                <span>v1.5.0</span>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     {rollEngine === 'dice-plus' && !activeDice && (
                         <button 
