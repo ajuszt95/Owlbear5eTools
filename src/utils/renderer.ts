@@ -10,7 +10,7 @@ export function render5etoolsText(text: string): RenderSegment[] {
 
     const segments: RenderSegment[] = [];
     let lastIndex = 0;
-    const tagRegex = /{@(\w+)(?:\s+([^}]+))?}/gi;
+    const tagRegex = /{@(\w+)(?:[\s|]([^}]+))?}/gi;
     let match;
 
     while ((match = tagRegex.exec(text)) !== null) {

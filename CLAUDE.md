@@ -62,8 +62,12 @@ index.html#/view?id=ID     → <ViewPopover />   (full stat block viewer, 350×6
 
 ### `src/ViewPopover.tsx`
 - The main stat block viewer. Opened by right-clicking a token that **already has** monster metadata. Full 5e stat block rendering: ability scores, saves, skills, actions, reactions, legendary actions, mythic actions, spellcasting, tables, lists, insets.
-- **Dice integration**: on mount, pings `dice-plus/isReady` (and variants) every second until Dice+ extension confirms ready. Clickable dice rolls broadcast to `dice-plus/roll-request` (and three fallback channels) via `OBR.broadcast.sendMessage`. Roll target (everyone/self) is persisted in `localStorage`.
+- **Dice integration**: supports **Dice+** and **Basic** rolling modes. In Dice+ mode, pings `dice-plus/isReady` and broadcasts rolls to `dice-plus/roll-request`. In Basic mode, evaluates dice formulas locally and displays results via `OBR.notification.show()` with Nat 1/20 indicators while locking roll target to Self. Both roll target and roll engine are persisted in `localStorage`.
 - **Remove button**: strips all metadata keys and resets token name to "Token", then closes the popover.
+
+### `src/utils/diceRoller.ts`
+- `parseDiceFormula(formula)` — parses dice expressions (`1d20+5`, `2d6+3`, `8`, etc.) into structured dice groups and static modifiers.
+- `evaluateRoll(formula, options)` — rolls dice, calculates totals, identifies Natural 1 / Natural 20 on single d20s, and generates formatted result strings and OBR notification variants (`SUCCESS`, `ERROR`, `DEFAULT`).
 
 ### `src/utils/renderer.ts`
 - `render5etoolsText(text)` — tokenizer for 5e.tools `{@tag value}` markup. Returns an array of `RenderSegment` objects (`{ type: 'text' }` or `{ type: 'roll', formula, label }`). Handles: `@atk`, `@hit`, `@damage`, `@dice`, `@dc`, `@sav`, `@recharge`, `@scaleDice`, and several action-result tags.
