@@ -454,7 +454,7 @@ function applyProficiencyBonus(mon: any, crIn: number, crOut: number): void {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Step 3: HP Scaling
+// Step 3: HP Scaling (Bug 1 Fix)
 // ────────────────────────────────────────────────────────────────────────────
 
 function scaleHp(mon: any, crIn: number, crOut: number, state: ScalingState): void {
@@ -477,44 +477,81 @@ function scaleHp(mon: any, crIn: number, crOut: number, state: ScalingState): vo
         return;
     }
 
-    let numHd = parseInt(match[1], 10);
+    const origNumHd = parseInt(match[1], 10);
     const hdFaces = parseInt(match[2], 10);
     const sign = match[3] === "-" ? -1 : 1;
     const modTotal = match[4] ? sign * parseInt(match[4], 10) : 0;
-    const modPerHd = Math.floor(modTotal / numHd);
+    const modPerHd = Math.floor(modTotal / origNumHd);
     const hdAvg = (hdFaces + 1) / 2;
 
     const inConRange = CON_RANGE[crIn] || [0, 2];
     const outConRange = CON_RANGE[crOut] || [0, 2];
     const targetConMod = interpAndTranslateToSpace(modPerHd, inConRange, outConRange);
 
-    let bestNumHd = numHd;
+    let bestNumHd = origNumHd;
     let bestModPerHd = targetConMod;
     let found = false;
 
-    // Preference 1: Adjust number of dice
-    for (let count = 1; count <= 200; count++) {
-        const avg = Math.floor(count * hdAvg + count * targetConMod);
-        if (avg >= targetRange[0] && avg <= targetRange[1]) {
-            bestNumHd = count;
-            bestModPerHd = targetConMod;
-            found = true;
-            break;
+    const calcAvg = (count: number, mod: number) => Math.floor(count * hdAvg + count * mod);
+
+    const initAvg = calcAvg(origNumHd, targetConMod);
+
+    if (initAvg >= targetRange[0] && initAvg <= targetRange[1]) {
+        bestNumHd = origNumHd;
+        found = true;
+    } else if (initAvg > targetRange[1]) {
+        // Decrease numHd (min 1) until in band; stop at first in-band value
+        for (let c = origNumHd - 1; c >= 1; c--) {
+            const avg = calcAvg(c, targetConMod);
+            if (avg <= targetRange[1] && avg >= targetRange[0]) {
+                bestNumHd = c;
+                found = true;
+                break;
+            }
+        }
+    } else if (initAvg < targetRange[0]) {
+        // Increase numHd until in band
+        for (let c = origNumHd + 1; c <= 300; c++) {
+            const avg = calcAvg(c, targetConMod);
+            if (avg >= targetRange[0] && avg <= targetRange[1]) {
+                bestNumHd = c;
+                found = true;
+                break;
+            }
         }
     }
 
-    // Preference 2: Adjust modifier with alternating steps: +1, -1, +2, -2...
+    // Only if still out of range, adjust modifier with alternating steps: +1, -1, +2, -2...
     if (!found) {
         const deltas = [1, -1, 2, -2, 3, -3, 4, -4, 5, -5];
         for (const d of deltas) {
             const tryMod = Math.max(-5, targetConMod + d);
-            for (let count = 1; count <= 200; count++) {
-                const avg = Math.floor(count * hdAvg + count * tryMod);
-                if (avg >= targetRange[0] && avg <= targetRange[1]) {
-                    bestNumHd = count;
-                    bestModPerHd = tryMod;
-                    found = true;
-                    break;
+            const tryInitAvg = calcAvg(origNumHd, tryMod);
+            if (tryInitAvg >= targetRange[0] && tryInitAvg <= targetRange[1]) {
+                bestNumHd = origNumHd;
+                bestModPerHd = tryMod;
+                found = true;
+                break;
+            }
+            if (tryInitAvg > targetRange[1]) {
+                for (let c = origNumHd - 1; c >= 1; c--) {
+                    const avg = calcAvg(c, tryMod);
+                    if (avg <= targetRange[1] && avg >= targetRange[0]) {
+                        bestNumHd = c;
+                        bestModPerHd = tryMod;
+                        found = true;
+                        break;
+                    }
+                }
+            } else {
+                for (let c = origNumHd + 1; c <= 300; c++) {
+                    const avg = calcAvg(c, tryMod);
+                    if (avg >= targetRange[0] && avg <= targetRange[1]) {
+                        bestNumHd = c;
+                        bestModPerHd = tryMod;
+                        found = true;
+                        break;
+                    }
                 }
             }
             if (found) break;
@@ -537,7 +574,85 @@ function scaleHp(mon: any, crIn: number, crOut: number, state: ScalingState): vo
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Step 4: To-Hit & Save DCs (HitSave)
+// Ability Detection Helpers (Bug 3 & 4 Fix)
+// ────────────────────────────────────────────────────────────────────────────
+
+const WEAPONS_FINESSE = ["dagger", "dart", "rapier", "scimitar", "shortsword", "whip"];
+const WEAPONS_THROWN = ["handaxe", "javelin", "light hammer", "spear", "trident", "net"];
+const WEAPONS_THROWN_FINESSE = ["dagger", "dart"];
+
+function getEnchantBonus(name?: string): number {
+    if (!name) return 0;
+    const m = /^\+(\d+)\b/.exec(name.trim());
+    return m ? parseInt(m[1], 10) : 0;
+}
+
+function guessModFromWeaponTags(name: string, content: string): "str" | "dex" | null {
+    const lowName = (name || "").toLowerCase();
+    const lowContent = (content || "").toLowerCase();
+    const combined = `${lowName} ${lowContent}`;
+
+    // Check @atk / @atkr tags
+    const atkMatch = /\{@(atk|atkr)\s*([^}]+)?\}/i.exec(lowContent);
+    if (!atkMatch) return null;
+
+    const atkTag = atkMatch[1].toLowerCase();
+    const atkVal = (atkMatch[2] || "").trim().toLowerCase();
+
+    // Must include weapon context: tag is atkr, or value has "w" (mw, rw, mw,rw)
+    const isWeapon = atkTag === "atkr" || atkVal.includes("w");
+    if (!isWeapon) return null;
+
+    const isMelee = atkVal.includes("m");
+    const isRanged = atkVal.includes("r");
+
+    const hasWeaponSubstr = (list: string[]) => list.some(w => combined.includes(w));
+
+    if (isMelee && isRanged) {
+        if (hasWeaponSubstr(WEAPONS_THROWN_FINESSE)) return "dex";
+        if (hasWeaponSubstr(WEAPONS_FINESSE)) return "dex";
+        if (hasWeaponSubstr(WEAPONS_THROWN)) return "str";
+        return null;
+    }
+
+    if (isMelee) {
+        if (hasWeaponSubstr(WEAPONS_FINESSE)) return "dex";
+        return "str";
+    }
+
+    if (isRanged) {
+        if (hasWeaponSubstr(WEAPONS_THROWN)) return "str";
+        return "dex";
+    }
+
+    return null;
+}
+
+export function getAbilBeingScaled(params: {
+    strMod: number;
+    dexMod: number;
+    modFromAbil: number | null;
+    name?: string;
+    content?: string;
+}): "str" | "dex" | null {
+    const { strMod, dexMod, modFromAbil, name, content } = params;
+    if (name == null || modFromAbil == null) return null;
+
+    if (strMod === dexMod && strMod === modFromAbil) {
+        return guessModFromWeaponTags(name, content || "");
+    }
+    if (strMod === modFromAbil) {
+        return "str";
+    }
+    if (dexMod === modFromAbil) {
+        return "dex";
+    }
+
+    return null;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Step 4: To-Hit & Save DCs (HitSave) - Bug 2, 3, 5 Fix
 // ────────────────────────────────────────────────────────────────────────────
 
 function scaleHitSave(mon: any, crIn: number, crOut: number, state: ScalingState): void {
@@ -548,47 +663,140 @@ function scaleHitSave(mon: any, crIn: number, crOut: number, state: ScalingState
     const pbIn = crToPb(crIn);
     const pbOut = crToPb(crOut);
 
-    walkMonsterStrings(mon, (str) => {
-        // To-hit tags
-        let updated = str.replace(/\{@hit ([+-]?\d+)\}/gi, (_, hitStr) => {
-            const toHit = parseInt(hitStr, 10);
+    const strModOrig = abilityMod(state.origScores.str);
+    const dexModOrig = abilityMod(state.origScores.dex);
+
+    // Spellcasting DC -> Int/Wis/Cha ability score update (Bug 2)
+    const updateSpellcastingAbilityFromDc = (outDc: number, origDc: number, abilityKey?: string) => {
+        if (!abilityKey) return;
+        const key = abilityKey.toLowerCase();
+        if (["int", "wis", "cha"].includes(key) && !state.modifiedAbilities.has(key)) {
+            const dcDiff = outDc - origDc;
+            const curMod = abilityMod(mon[key] ?? 10);
+            mon[key] = calcNewAbility(mon, key, curMod + dcDiff + pbIn - pbOut);
+            state.modifiedAbilities.add(key);
+        }
+    };
+
+    // If spellcasting is present, identify primary casting ability
+    let primarySpellAbility: string | undefined;
+    if (Array.isArray(mon.spellcasting) && mon.spellcasting.length > 0) {
+        primarySpellAbility = mon.spellcasting[0]?.ability;
+    }
+
+    // Process named entries
+    processNamedEntries(mon, (name, content) => {
+        let updatedContent = content;
+
+        // Process {@hit N}
+        updatedContent = updatedContent.replace(/\{@hit ([+-]?\d+)\}/gi, (_, hitStr) => {
+            const curToHit = parseInt(hitStr, 10);
+            const enchant = getEnchantBonus(name);
+
+            // Recover pre-PB/enchant to-hit for scaling down
             let scaledHit: number;
             if (crIn < crOut) {
-                scaledHit = toHit + (idealHitOut - idealHitIn);
+                scaledHit = curToHit + (idealHitOut - idealHitIn);
             } else {
-                scaledHit = getScaledToRatio(toHit, idealHitIn, idealHitOut);
+                const recoveredPreAdj = curToHit - pbOut + pbIn - enchant;
+                const scaledBase = getScaledToRatio(recoveredPreAdj, idealHitIn, idealHitOut);
+                scaledHit = scaledBase + pbOut - pbIn + enchant;
             }
 
-            // Estimate ability mod
-            const approxAbilityMod = scaledHit - pbOut;
-            const strMod = abilityMod(state.origScores.str);
-            const dexMod = abilityMod(state.origScores.dex);
-            if (Math.abs(approxAbilityMod - dexMod) < Math.abs(approxAbilityMod - strMod)) {
-                state.dexCandidates.push(approxAbilityMod);
-            } else {
-                state.strCandidates.push(approxAbilityMod);
+            // Only detect Str/Dex if this is a weapon attack (has 'w' in @atk tag, or uses atkr)
+            const atkTagMatch = /\{@(atk|atkr)\s*([^}]*)}/i.exec(content);
+            const isWeaponAttack = atkTagMatch && (
+                atkTagMatch[1].toLowerCase() === "atkr" ||
+                (atkTagMatch[2] || "").toLowerCase().includes("w")
+            );
+
+            if (isWeaponAttack) {
+                // Find modFromAbil (try normal, expertise, no proficiency)
+                const candidates = [
+                    curToHit - pbOut - enchant,
+                    curToHit - 2 * pbOut - enchant,
+                    curToHit - enchant
+                ];
+
+                let detectedAbil: "str" | "dex" | null = null;
+                let chosenModFromAbil: number | null = null;
+
+                for (const c of candidates) {
+                    const abil = getAbilBeingScaled({
+                        strMod: strModOrig,
+                        dexMod: dexModOrig,
+                        modFromAbil: c,
+                        name,
+                        content
+                    });
+                    if (abil) {
+                        detectedAbil = abil;
+                        chosenModFromAbil = c;
+                        break;
+                    }
+                }
+
+                if (detectedAbil) {
+                    const impliedNewMod = (chosenModFromAbil ?? 0) + (scaledHit - curToHit);
+                    if (detectedAbil === "str") {
+                        state.strCandidates.push(impliedNewMod);
+                    } else if (detectedAbil === "dex") {
+                        state.dexCandidates.push(impliedNewMod);
+                    }
+                }
             }
 
             return `{@hit ${scaledHit >= 0 ? `${scaledHit}` : scaledHit}}`;
         });
 
-        // DCs in tags or text
-        updated = updated.replace(/\{@dc (\d+)([^}]*)\}/gi, (_, dcStr, rest) => {
+        // Process {@dc N}
+        updatedContent = updatedContent.replace(/\{@dc (\d+)([^}]*)\}/gi, (_, dcStr, rest) => {
             const curDc = parseInt(dcStr, 10);
             const origDc = curDc + pbIn - pbOut;
             const outDc = Math.max(10, origDc + (idealDcOut - idealDcIn));
+            updateSpellcastingAbilityFromDc(outDc, origDc, primarySpellAbility);
             return `{@dc ${outDc}${rest}}`;
         });
 
-        updated = updated.replace(/\bDC (\d+)\b/g, (_, dcStr) => {
+        // Process DC N
+        updatedContent = updatedContent.replace(/\bDC (\d+)\b/g, (_, dcStr) => {
             const curDc = parseInt(dcStr, 10);
             const origDc = curDc + pbIn - pbOut;
             const outDc = Math.max(10, origDc + (idealDcOut - idealDcIn));
+            updateSpellcastingAbilityFromDc(outDc, origDc, primarySpellAbility);
             return `DC ${outDc}`;
         });
 
-        return updated;
+        return updatedContent;
     });
+
+    // Also walk spellcasting headerEntries
+    if (Array.isArray(mon.spellcasting)) {
+        for (const sc of mon.spellcasting) {
+            const scAbility = sc.ability || primarySpellAbility;
+            if (Array.isArray(sc.headerEntries)) {
+                sc.headerEntries = sc.headerEntries.map((entry: any) =>
+                    transformEntry(entry, (str) => {
+                        let updated = str.replace(/\{@dc (\d+)([^}]*)\}/gi, (_, dcStr, rest) => {
+                            const curDc = parseInt(dcStr, 10);
+                            const origDc = curDc + pbIn - pbOut;
+                            const outDc = Math.max(10, origDc + (idealDcOut - idealDcIn));
+                            updateSpellcastingAbilityFromDc(outDc, origDc, scAbility);
+                            return `{@dc ${outDc}${rest}}`;
+                        });
+                        updated = updated.replace(/\bDC (\d+)\b/g, (_, dcStr) => {
+                            const curDc = parseInt(dcStr, 10);
+                            const origDc = curDc + pbIn - pbOut;
+                            const outDc = Math.max(10, origDc + (idealDcOut - idealDcIn));
+                            updateSpellcastingAbilityFromDc(outDc, origDc, scAbility);
+                            return `DC ${outDc}`;
+                        });
+                        return updated;
+                    })
+                );
+            }
+        }
+    }
 
     const getMostFrequent = (arr: number[]): number | undefined => {
         if (arr.length === 0) return undefined;
@@ -611,7 +819,7 @@ function scaleHitSave(mon: any, crIn: number, crOut: number, state: ScalingState
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Step 5: DPR / Damage Expressions
+// Step 5: DPR / Damage Expressions (Bug 4 Fix)
 // ────────────────────────────────────────────────────────────────────────────
 
 function scaleDpr(mon: any, crIn: number, crOut: number, state: ScalingState): void {
@@ -620,20 +828,30 @@ function scaleDpr(mon: any, crIn: number, crOut: number, state: ScalingState): v
     const dprAvgOut = getRangeMean(CR_DPR_RANGES[crOut]);
     const variance = getRangeHalfWidth(CR_DPR_RANGES[crOut]);
 
-    const strMod = state.tempStrMod ?? interpAndTranslateToSpace(
-        abilityMod(state.origScores.str),
+    const strModOrig = abilityMod(state.origScores.str);
+    const dexModOrig = abilityMod(state.origScores.dex);
+
+    const strModTarget = state.tempStrMod ?? interpAndTranslateToSpace(
+        strModOrig,
         DAMAGE_MOD_RANGE[crIn] || [0, 3],
         DAMAGE_MOD_RANGE[crOut] || [0, 3]
     );
-    const dexMod = state.tempDexMod ?? interpAndTranslateToSpace(
-        abilityMod(state.origScores.dex),
+    const dexModTarget = state.tempDexMod ?? interpAndTranslateToSpace(
+        dexModOrig,
         DAMAGE_MOD_RANGE[crIn] || [0, 3],
         DAMAGE_MOD_RANGE[crOut] || [0, 3]
     );
 
     const dieFaces = [4, 6, 8, 10, 12, 20];
 
-    const scaleExpression = (_fullMatch: string, avgStr: string, diceFormula: string, damageType: string): string => {
+    const scaleExpression = (
+        _fullMatch: string,
+        avgStr: string,
+        diceFormula: string,
+        damageType: string,
+        actionName: string,
+        fullContent: string
+    ): string => {
         const oldAvg = avgStr ? parseInt(avgStr, 10) : diceAverage(diceFormula);
         const dprAdjusted = getScaledToRatio(oldAvg, dprAvgIn, dprAvgOut);
         const targetRange: [number, number] = [
@@ -653,8 +871,36 @@ function scaleDpr(mon: any, crIn: number, crOut: number, state: ScalingState): v
         const sign = match[3] === "-" ? -1 : 1;
         const mod = match[4] ? sign * parseInt(match[4], 10) : 0;
 
-        // Choose ability mod
-        const desiredMod = Math.abs(mod - dexMod) < Math.abs(mod - strMod) ? dexMod : strMod;
+        const enchant = getEnchantBonus(actionName);
+        const rawMod = mod - enchant;
+
+        // Detect ability
+        const detectedAbil = getAbilBeingScaled({
+            strMod: strModOrig,
+            dexMod: dexModOrig,
+            modFromAbil: rawMod,
+            name: actionName,
+            content: fullContent
+        });
+
+        let desiredMod: number;
+
+        if (detectedAbil === "str") {
+            desiredMod = strModTarget + enchant;
+        } else if (detectedAbil === "dex") {
+            desiredMod = dexModTarget + enchant;
+        } else {
+            // Null ability (e.g. Arcane Burst tied to Int/Wis/Cha or no stat)
+            // If monster has a modified casting ability (e.g. Int from Spell DC), check if mod matches it
+            let matchedCastingMod: number | null = null;
+            for (const k of ["int", "wis", "cha"]) {
+                if (abilityMod(state.origScores[k]) === rawMod) {
+                    matchedCastingMod = abilityMod(mon[k]) + enchant;
+                    break;
+                }
+            }
+            desiredMod = matchedCastingMod !== null ? matchedCastingMod : mod;
+        }
 
         let bestCount = count;
         let bestFace = faces;
@@ -692,7 +938,7 @@ function scaleDpr(mon: any, crIn: number, crOut: number, state: ScalingState): v
             }
         }
 
-        // Preference 3: Adjust modifier with alternating steps
+        // Preference 3: Adjust modifier with alternating steps (only if ability is not locked or forced)
         if (!found) {
             const deltas = [1, -1, 2, -2, 3, -3, 4, -4, 5, -5];
             for (const d of deltas) {
@@ -726,27 +972,27 @@ function scaleDpr(mon: any, crIn: number, crOut: number, state: ScalingState): v
         return `${newFormula}${typeStr}`;
     };
 
-    walkMonsterStrings(mon, (str) => {
+    processNamedEntries(mon, (actionName, content) => {
         // Match: {@damage 2d6 + 3} or {@scaledamage ...}
-        let updated = str.replace(/\{@(damage|scaledamage|scaledice) ([^}]+)\}/gi, (_, tag, expr) => {
-            const scaled = scaleExpression("", "", expr, "");
+        let updated = content.replace(/\{@(damage|scaledamage|scaledice) ([^}]+)\}/gi, (_, tag, expr) => {
+            const scaled = scaleExpression("", "", expr, "", actionName, content);
             return `{@${tag} ${scaled}}`;
         });
 
         // Match: 10 (2d6 + 3) slashing damage
         updated = updated.replace(/(\d+)\s*\(((\d+)?d\d+(?:\s*[+-]\s*\d+)?)\)(?:\s+([a-zA-Z]+))?/gi, (m, avg, formula, _, type) => {
-            return scaleExpression(m, avg, formula, type || "");
+            return scaleExpression(m, avg, formula, type || "", actionName, content);
         });
 
         return updated;
     });
 
-    // Finalize Str/Dex scores
-    if (state.tempStrMod !== undefined) {
+    // Finalize Str/Dex scores ONLY if candidates were detected
+    if (state.tempStrMod !== undefined && state.strCandidates.length > 0) {
         mon.str = calcNewAbility(mon, "str", state.tempStrMod);
         state.modifiedAbilities.add("str");
     }
-    if (state.tempDexMod !== undefined) {
+    if (state.tempDexMod !== undefined && state.dexCandidates.length > 0) {
         mon.dex = calcNewAbility(mon, "dex", state.tempDexMod);
         state.modifiedAbilities.add("dex");
     }
@@ -828,7 +1074,7 @@ function propagateAbilityChanges(mon: any, state: ScalingState): void {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// String Traversal Helper
+// String Traversal Helpers
 // ────────────────────────────────────────────────────────────────────────────
 
 function walkMonsterStrings(mon: any, transform: (str: string) => string): void {
@@ -836,6 +1082,29 @@ function walkMonsterStrings(mon: any, transform: (str: string) => string): void 
     for (const f of fields) {
         if (Array.isArray(mon[f])) {
             mon[f] = mon[f].map((entry: any) => transformEntry(entry, transform));
+        }
+    }
+}
+
+function processNamedEntries(mon: any, transform: (name: string, content: string) => string): void {
+    const fields = ["trait", "action", "bonus", "reaction", "legendary", "mythic", "variant"];
+    for (const f of fields) {
+        if (Array.isArray(mon[f])) {
+            mon[f] = mon[f].map((item: any) => {
+                if (item && typeof item === "object") {
+                    const actionName = item.name || "";
+                    if (Array.isArray(item.entries)) {
+                        item.entries = item.entries.map((entry: any) =>
+                            transformEntry(entry, (str) => transform(actionName, str))
+                        );
+                    } else if (typeof item.entry === "string") {
+                        item.entry = transform(actionName, item.entry);
+                    }
+                } else if (typeof item === "string") {
+                    return transform("", item);
+                }
+                return item;
+            });
         }
     }
 }

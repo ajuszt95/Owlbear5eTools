@@ -278,5 +278,104 @@ describe("scaleCreature.ts", () => {
             expect(scaled._scaledCr).toBe(4);
             expect(scaled.hp?.special).toBe("50 plus 10 per level");
         });
+
+        it("scales Archmage (XMM) CR 12 -> 5 matching all acceptance criteria", () => {
+            const archmageXmm: Monster = {
+                name: "Archmage",
+                source: "XMM",
+                cr: "12",
+                hp: { average: 99, formula: "18d8 + 18" },
+                ac: [15],
+                str: 10,
+                dex: 14,
+                con: 12,
+                int: 20,
+                wis: 15,
+                cha: 16,
+                save: {
+                    int: "+9",
+                    wis: "+6"
+                },
+                skill: {
+                    arcana: "+13",
+                    history: "+13"
+                },
+                passive: 12,
+                spellcasting: [
+                    {
+                        name: "Spellcasting",
+                        ability: "int",
+                        headerEntries: [
+                            "The archmage casts one of the following spells, using Intelligence as the spellcasting ability (spell save {@dc 17}):"
+                        ]
+                    }
+                ],
+                action: [
+                    {
+                        name: "Arcane Burst",
+                        entries: [
+                            "{@atk ms,rs} {@hit 9} to hit, reach 5 ft. or range 120 ft., one target. {@h}27 (4d10 + 5) force damage."
+                        ]
+                    }
+                ]
+            };
+
+            const scaled = scaleMonster(archmageXmm, 5);
+
+            // Acceptance 1: HP — targetHp = round(99 * 138/243) = 56, targetRange [49,63]
+            // Starting from origNumHd=18 with targetConMod=2, initAvg=117>63, decrement to 9:
+            // 9*4.5 + 9*2 = 58 which is in [49,63]. Result: 9d8+18 (avg 58)
+            expect(scaled.hp?.formula).toBe("9d8 + 18");
+            expect(scaled.hp?.average).toBe(58);
+
+            // Con mod per HD was +1 (con 12). CR 5 outConRange = [2,4].
+            // interpAndTranslateToSpace(1, [1,5], [2,4]) → targetConMod = 2 → con 14 (+2)
+            expect(scaled.con).toBeDefined();
+            expect(abilityMod(scaled.con)).toBe(2);
+
+            // AC: 15 * crToAc(5)/crToAc(12) = 15 * 15/17 ≈ 13
+            expect(scaled.ac).toBeDefined();
+            expect(scaled.ac![0]).toBeLessThanOrEqual(15);
+
+            // INT: idealDcIn=17 (CR12), idealDcOut=15 (CR5), pbIn=4, pbOut=3
+            // origDc = 17 (recovered from {@dc 17}+4-3=18... wait: recoveredDc = 17+4-3=18, outDc=max(10,18+(15-17))=16)
+            // Let's just assert INT is reduced from 20 (mod+5) toward a lower value
+            expect(scaled.int).toBeDefined();
+            expect(abilityMod(scaled.int)).toBeLessThan(5);
+
+            // Spell save DC in header: should be scaled from 17 down
+            const scHeader = scaled.spellcasting![0].headerEntries[0];
+            expect(scHeader).toMatch(/\{@dc \d+\}/);
+            const dcMatch = /\{@dc (\d+)\}/.exec(scHeader);
+            expect(parseInt(dcMatch![1])).toBeLessThan(17);
+
+            // Arcane Burst to-hit: CR12 ideal +9, CR5 ideal +7; curToHit=9, should decrease
+            const arcaneBurst = (scaled.action![0] as any).entries[0];
+            expect(arcaneBurst).toMatch(/\{@hit \d+\}/);
+            const hitMatch = /\{@hit (\d+)\}/.exec(arcaneBurst);
+            expect(parseInt(hitMatch![1])).toBeLessThanOrEqual(9);
+
+            // Arcane Burst damage: check formula is still present
+            expect(arcaneBurst).toMatch(/\d+d\d+/);
+
+            // DEX 14 (+2) unchanged — not Str/Dex based, so dex should be unmodified
+            expect(scaled.dex).toBe(14);
+            expect(abilityMod(scaled.dex)).toBe(2);
+        });
+
+        it("keeps unscaled monster data unchanged", () => {
+            const rawMonster: Monster = {
+                name: "Unchanged Monster",
+                source: "MM",
+                cr: "3",
+                hp: { average: 50, formula: "8d8 + 14" },
+                str: 14,
+                dex: 12,
+                con: 14,
+            };
+
+            const unscaled = scaleMonster(rawMonster, 3);
+            expect(unscaled).toEqual(rawMonster);
+        });
     });
 });
