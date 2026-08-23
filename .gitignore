@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Tool and index caches
+.slim
+*codemap.md

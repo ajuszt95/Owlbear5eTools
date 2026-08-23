@@ -77,7 +77,7 @@ export default function HelpPopover() {
                     "Move along, this extension is for the Dungeon Master..."
                 </p>
                 <div style={{ marginTop: "40px", fontSize: "11px", color: "#999" }}>
-                    v1.5.0
+                    v1.6.0
                 </div>
             </div>
         );
@@ -213,7 +213,7 @@ export default function HelpPopover() {
                 justifyContent: "space-between"
             }}>
                 <span>Created by ajuszt95</span>
-                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.5.0</span>
+                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.6.0</span>
             </footer>
         </div>
     );

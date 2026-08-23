@@ -46,7 +46,7 @@ export default function ImportPopover() {
                 };
 
                 // Sync name ONLY for Stat Bubbles metadata
-                metadata[BUBBLES_NAME] = monsterData.name;
+                metadata[BUBBLES_NAME] = monsterData._displayName || monsterData.name;
 
                 item.metadata = metadata;
             });
@@ -166,7 +166,7 @@ export default function ImportPopover() {
             </div>
 
             <footer style={{ marginTop: "auto", paddingTop: "24px", textAlign: "center", fontSize: "11px", color: "#999" }}>
-                <p>Version 1.5.0 | Connected to 5e.tools</p>
+                <p>Version 1.6.0 | Connected to 5e.tools</p>
             </footer>
         </div>
     );

@@ -125,6 +125,76 @@ describe('api.ts', () => {
             expect(result.tokenUrl).toContain('Goblin.webp');
         });
 
+        it('should parse scaled:CR sub-hash and scale monster', async () => {
+            const mockSquid: Monster = {
+                name: 'Giant Squid',
+                source: 'XMM',
+                cr: '6',
+                hp: { average: 120, formula: '16d10 + 32' },
+                ac: [11],
+                str: 21,
+                dex: 11,
+                con: 15,
+                action: [
+                    {
+                        name: 'Bite',
+                        entries: ['{@atk mw} {@hit 8} to hit. {@h}23 (4d8 + 5) piercing damage.']
+                    }
+                ]
+            };
+
+            (global.fetch as any).mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ monster: [mockSquid] }),
+            });
+
+            const result = await fetchMonsterData('https://5e.tools/bestiary.html#giant%20squid_xmm,scaled:9');
+            expect(result._isScaledCr).toBe(true);
+            expect(result._scaledCr).toBe(9);
+            expect(result.cr).toBe('9');
+            expect(result._displayName).toBe('Giant Squid (CR 9)');
+            expect(result.hp?.average).toBeGreaterThan(120);
+        });
+
+        it('should ignore other sub-hashes like scaledspellsummon without crashing', async () => {
+            const mockMonster: Monster = {
+                name: 'Goblin',
+                source: 'MM',
+                cr: '1/4',
+                hp: { average: 7, formula: '2d6' },
+                ac: [15],
+            };
+
+            (global.fetch as any).mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ monster: [mockMonster] }),
+            });
+
+            const result = await fetchMonsterData('https://5e.tools/bestiary.html#goblin_mm,scaledspellsummon:3');
+            expect(result.name).toBe('Goblin');
+            expect(result._isScaledCr).toBeUndefined();
+        });
+
+        it('should parse query params with scaled hash correctly', async () => {
+            const mockMonster: Monster = {
+                name: 'Goblin',
+                source: 'MM',
+                cr: '1/4',
+                hp: { average: 7, formula: '2d6' },
+                ac: [15],
+            };
+
+            (global.fetch as any).mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ monster: [mockMonster] }),
+            });
+
+            const result = await fetchMonsterData('https://5e.tools/bestiary.html?source=MM&hash=goblin_mm,scaled:2');
+            expect(result._isScaledCr).toBe(true);
+            expect(result._scaledCr).toBe(2);
+            expect(result.cr).toBe('2');
+        });
+
         it('should throw if monster not found in list', async () => {
             (global.fetch as any).mockResolvedValueOnce({
                 ok: true,

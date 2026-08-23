@@ -1,11 +1,17 @@
+import { scaleMonster } from "./utils/scaleCreature";
+
 export interface Monster {
     name: string;
     source: string;
-    hp?: { average?: number };
+    hp?: { average?: number; formula?: string; special?: number | string };
     ac?: Array<number | { ac: number }>;
     size?: string[]; // e.g. ["M"]
     tokenUrl?: string; // Resolved GitHub Mirror URL
     sourceUrl?: string; // Original 5e.tools URL
+    _displayName?: string;
+    _scaledCr?: number;
+    _isScaledCr?: boolean;
+    _originalCr?: string | number;
     [key: string]: any; // full stat block
 }
 
@@ -44,6 +50,7 @@ export function getMonsterDimensions(size?: string[]): { multiplier: number } {
 export async function fetchMonsterData(url: string): Promise<Monster> {
     let source = "";
     let nameIdentifier = "";
+    let targetCr: number | null = null;
 
     try {
         const urlObj = new URL(url);
@@ -56,23 +63,47 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
             let rawHash = searchParams.get("hash") || "";
             // Decode twice to handle %25 -> % -> space
             let decodedHash = decodeURIComponent(decodeURIComponent(rawHash));
+
+            const commaParts = decodedHash.split(",");
+            const mainIdentity = commaParts[0] || "";
+
+            for (let i = 1; i < commaParts.length; i++) {
+                const part = commaParts[i].trim();
+                if (part.startsWith("scaled:")) {
+                    const crVal = parseFloat(part.substring("scaled:".length));
+                    if (!isNaN(crVal)) targetCr = crVal;
+                }
+            }
             
-            if (decodedHash.includes("_")) {
-                const parts = decodedHash.split("_");
+            if (mainIdentity.includes("_")) {
+                const parts = mainIdentity.split("_");
                 source = searchParams.get("source") || parts.pop() || "";
                 nameIdentifier = parts.join("_");
             } else {
-                nameIdentifier = decodedHash;
+                nameIdentifier = mainIdentity;
                 source = searchParams.get("source") || "";
             }
         }
-        // 2. Fallback to standard hash format: bestiary.html#aarakocra_lox
-        else if (urlObj.hash && urlObj.hash.includes("_")) {
+        // 2. Fallback to standard hash format: bestiary.html#aarakocra_lox or #giant%20squid_xmm,scaled:9
+        else if (urlObj.hash && urlObj.hash.length > 1) {
             // Decode the hash to handle encoded spaces (e.g. %20)
             const decodedHash = decodeURIComponent(urlObj.hash.substring(1)); // remove leading #
-            const hashParts = decodedHash.split("_");
-            source = hashParts.pop() || "";
-            nameIdentifier = hashParts.join("_");
+            const commaParts = decodedHash.split(",");
+            const mainIdentity = commaParts[0] || "";
+
+            for (let i = 1; i < commaParts.length; i++) {
+                const part = commaParts[i].trim();
+                if (part.startsWith("scaled:")) {
+                    const crVal = parseFloat(part.substring("scaled:".length));
+                    if (!isNaN(crVal)) targetCr = crVal;
+                }
+            }
+
+            if (mainIdentity.includes("_")) {
+                const hashParts = mainIdentity.split("_");
+                source = hashParts.pop() || "";
+                nameIdentifier = hashParts.join("_");
+            }
         }
         // 3. Fallback to path format: https://5e.tools/bestiary/aarakocra-spelljammer-lox.html
         else if (urlObj.pathname.includes(".html") && urlObj.pathname.includes("/")) {
@@ -135,6 +166,11 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
 
         // Store original source URL for hyperlink support
         foundMonster.sourceUrl = url;
+
+        // Apply CR scaling if targetCr is present
+        if (targetCr !== null) {
+            foundMonster = scaleMonster(foundMonster, targetCr);
+        }
 
         return foundMonster;
     } catch (err: any) {

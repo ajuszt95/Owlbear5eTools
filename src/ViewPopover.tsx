@@ -677,7 +677,7 @@ export default function ViewPopover() {
 
     if (!monster) {
         return (
-            <div>Loading (v1.5.0)...</div>
+            <div>Loading (v1.6.0)...</div>
         );
     }
 
@@ -761,9 +761,9 @@ export default function ViewPopover() {
                 <h2 style={{ color: "#58180D", margin: 0, fontSize: "22px" }}>
                     {monster.sourceUrl ? (
                         <a href={monster.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "underline dotted", fontWeight: "bold" }}>
-                            {monster.name}
+                            {monster._displayName || monster.name}
                         </a>
-                    ) : monster.name}
+                    ) : (monster._displayName || monster.name)}
                 </h2>
                 <button onClick={handleRemove} style={{ padding: "4px 8px", fontSize: "11px", background: "#800", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>
                     Remove
@@ -947,7 +947,7 @@ export default function ViewPopover() {
 
             {/* Footer / Debug */}
             <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>v1.5.0</span>
+                <span>v1.6.0</span>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     {rollEngine === 'dice-plus' && !activeDice && (
                         <button 

@@ -30,6 +30,8 @@ export async function spawnMonster(url: string, itemWidth: number, itemHeight: n
     // nativeUnits = pixels / itemDpi  =>  itemDpi = pixels / targetUnits
     const itemDpi = itemWidth / multiplier;
 
+    const displayName = monster._displayName || monster.name;
+
     const imageItem = buildImage(
         {
             url: monster.tokenUrl || "https://5e.tools/img/token/blank.png",
@@ -45,7 +47,7 @@ export async function spawnMonster(url: string, itemWidth: number, itemHeight: n
         .position(topLeft)
         // No .scale() - we rely on native sizing for extension compatibility
         .layer("CHARACTER")
-        .name(monster.name)
+        .name(displayName)
         .metadata({
             [METADATA_KEY]: monster,
             [BUBBLES_METADATA_KEY]: {
@@ -55,7 +57,7 @@ export async function spawnMonster(url: string, itemWidth: number, itemHeight: n
                 "temporary health": 0,
                 "hide": false
             },
-            "com.owlbear-rodeo-bubbles-extension/name": monster.name,
+            "com.owlbear-rodeo-bubbles-extension/name": displayName,
         })
         .build();
 
