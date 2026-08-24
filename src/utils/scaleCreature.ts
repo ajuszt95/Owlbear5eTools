@@ -851,7 +851,7 @@ function scaleDpr(mon: any, crIn: number, crOut: number, state: ScalingState): v
         damageType: string,
         actionName: string,
         fullContent: string
-    ): string => {
+    ): { average: number; formula: string; type: string } => {
         const oldAvg = avgStr ? parseInt(avgStr, 10) : diceAverage(diceFormula);
         const dprAdjusted = getScaledToRatio(oldAvg, dprAvgIn, dprAvgOut);
         const targetRange: [number, number] = [
@@ -863,7 +863,7 @@ function scaleDpr(mon: any, crIn: number, crOut: number, state: ScalingState): v
         if (!match) {
             // Flat damage
             const flatVal = Math.max(1, dprAdjusted);
-            return damageType ? `${flatVal} ${damageType}` : `${flatVal}`;
+            return { average: flatVal, formula: `${flatVal}`, type: damageType };
         }
 
         const count = match[1] ? parseInt(match[1], 10) : 1;
@@ -966,22 +966,25 @@ function scaleDpr(mon: any, crIn: number, crOut: number, state: ScalingState): v
         const newFormula = `${bestCount}d${bestFace}${modStr}`;
         const typeStr = damageType ? ` ${damageType}` : "";
 
-        if (avgStr) {
-            return `${finalAvg} (${newFormula})${typeStr}`;
-        }
-        return `${newFormula}${typeStr}`;
+        return { average: finalAvg, formula: newFormula, type: typeStr };
     };
 
     processNamedEntries(mon, (actionName, content) => {
+        let updated = content.replace(/(\d+)\s*\(\s*\{@(damage|scaledamage|scaledice)\s+([^}]+)\}\s*\)/gi, (_, avg, tag, expr) => {
+            const scaled = scaleExpression("", avg, expr, "", actionName, content);
+            return `${scaled.average} ({@${tag} ${scaled.formula}})`;
+        });
+
         // Match: {@damage 2d6 + 3} or {@scaledamage ...}
-        let updated = content.replace(/\{@(damage|scaledamage|scaledice) ([^}]+)\}/gi, (_, tag, expr) => {
+        updated = updated.replace(/\{@(damage|scaledamage|scaledice) ([^}]+)\}/gi, (_, tag, expr) => {
             const scaled = scaleExpression("", "", expr, "", actionName, content);
-            return `{@${tag} ${scaled}}`;
+            return `{@${tag} ${scaled.formula}}`;
         });
 
         // Match: 10 (2d6 + 3) slashing damage
         updated = updated.replace(/(\d+)\s*\(((\d+)?d\d+(?:\s*[+-]\s*\d+)?)\)(?:\s+([a-zA-Z]+))?/gi, (m, avg, formula, _, type) => {
-            return scaleExpression(m, avg, formula, type || "", actionName, content);
+            const scaled = scaleExpression(m, avg, formula, type || "", actionName, content);
+            return `${scaled.average} (${scaled.formula})${scaled.type}`;
         });
 
         return updated;
