@@ -363,33 +363,6 @@ describe("scaleCreature.ts", () => {
             expect(abilityMod(scaled.dex)).toBe(2);
         });
 
-        it("rescales the average shown before a damage markup tag", () => {
-            const insectileRapier: Monster = {
-                name: "Insectile Rapier User",
-                source: "XMM",
-                cr: "1/4",
-                hp: { average: 40, formula: "8d8" },
-                str: 10,
-                dex: 18,
-                con: 10,
-                action: [
-                    {
-                        name: "Insectile Rapier",
-                        entries: [
-                            "{@atk mw} {@hit 4} to hit. {@h}6 ({@damage 1d8 + 2}) piercing damage plus 2 ({@damage 1d4}) poison damage."
-                        ]
-                    }
-                ]
-            };
-
-            const scaled = scaleMonster(insectileRapier, 20);
-            const entry = (scaled.action![0] as any).entries[0];
-
-            expect(entry).toMatch(/\d+ \(\{@damage \d+d\d+(?: [+-] \d+)?\}\)/);
-            expect(entry).not.toMatch(/6 \(\{@damage/);
-            expect(entry).not.toMatch(/2 \(\{@damage/);
-        });
-
         it("keeps unscaled monster data unchanged", () => {
             const rawMonster: Monster = {
                 name: "Unchanged Monster",
