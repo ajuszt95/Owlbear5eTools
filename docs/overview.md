@@ -48,7 +48,7 @@ extension see a restricted-access screen; no stat block data is written or displ
 |------|-------|
 | Extension manifest | `https://ajuszt95.github.io/Owlbear5eTools/manifest.json` |
 | Author | ajuszt95 |
-| Current version | 1.6.1 |
+| Current version | 1.6.3 |
 
 Install by pasting the manifest URL into the Owlbear Rodeo extensions dialog.
 
