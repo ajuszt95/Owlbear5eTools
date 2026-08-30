@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { fetchMonsterData } from "./api";
 import { spawnMonster } from "./spawning";
+import { APP_VERSION } from "./version";
 
 export default function HelpPopover() {
     const [spawnUrl, setSpawnUrl] = useState("");
@@ -77,7 +78,7 @@ export default function HelpPopover() {
                     "Move along, this extension is for the Dungeon Master..."
                 </p>
                 <div style={{ marginTop: "40px", fontSize: "11px", color: "#999" }}>
-                    v1.6.3
+                    v{APP_VERSION}
                 </div>
             </div>
         );
@@ -213,7 +214,7 @@ export default function HelpPopover() {
                 justifyContent: "space-between"
             }}>
                 <span>Created by ajuszt95</span>
-                <span style={{ fontWeight: 600, color: "#58180D" }}>v1.6.3</span>
+                <span style={{ fontWeight: 600, color: "#58180D" }}>v{APP_VERSION}</span>
             </footer>
         </div>
     );

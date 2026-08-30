@@ -2,6 +2,7 @@ import { useState } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { EXTENSION_ID, METADATA_KEY, BUBBLES_METADATA_KEY, BUBBLES_NAME } from "./Background";
 import { fetchMonsterData, extractAC, extractHP } from "./api";
+import { APP_VERSION } from "./version";
 
 export default function ImportPopover() {
     const [url, setUrl] = useState("");
@@ -166,7 +167,7 @@ export default function ImportPopover() {
             </div>
 
             <footer style={{ marginTop: "auto", paddingTop: "24px", textAlign: "center", fontSize: "11px", color: "#999" }}>
-                <p>Version 1.6.3 | Connected to 5e.tools</p>
+                <p>Version {APP_VERSION} | Connected to 5e.tools</p>
             </footer>
         </div>
     );
