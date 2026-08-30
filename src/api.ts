@@ -1,4 +1,4 @@
-import { scaleMonster } from "./utils/scaleCreature";
+import { crToNumber, scaleMonster } from "./utils/scaleCreature";
 
 export interface Monster {
     name: string;
@@ -47,6 +47,18 @@ export function getMonsterDimensions(size?: string[]): { multiplier: number } {
     }
 }
 
+function parseScaledCr(commaParts: string[]): number | null {
+    for (let i = 1; i < commaParts.length; i++) {
+        const part = commaParts[i].trim();
+        if (part.startsWith("scaled:")) {
+            const raw = part.substring("scaled:".length).trim();
+            const num = crToNumber(raw);
+            if (num !== null && !isNaN(num) && num >= 0 && num <= 30) return num;
+        }
+    }
+    return null;
+}
+
 export async function fetchMonsterData(url: string): Promise<Monster> {
     let source = "";
     let nameIdentifier = "";
@@ -60,20 +72,15 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
         // Format: index.html?source=WhereEvilLives&hash=abyssal%2520hyena_whereevillives
         if (searchParams.has("hash")) {
             // 5e.tools often double-encodes the hash param (e.g. %2520 for space)
-            let rawHash = searchParams.get("hash") || "";
+            const rawHash = searchParams.get("hash") || "";
             // Decode twice to handle %25 -> % -> space
-            let decodedHash = decodeURIComponent(decodeURIComponent(rawHash));
+            const decodedHash = decodeURIComponent(decodeURIComponent(rawHash));
 
             const commaParts = decodedHash.split(",");
             const mainIdentity = commaParts[0] || "";
 
-            for (let i = 1; i < commaParts.length; i++) {
-                const part = commaParts[i].trim();
-                if (part.startsWith("scaled:")) {
-                    const crVal = parseFloat(part.substring("scaled:".length));
-                    if (!isNaN(crVal)) targetCr = crVal;
-                }
-            }
+            const parsed = parseScaledCr(commaParts);
+            if (parsed !== null) targetCr = parsed;
             
             if (mainIdentity.includes("_")) {
                 const parts = mainIdentity.split("_");
@@ -91,13 +98,8 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
             const commaParts = decodedHash.split(",");
             const mainIdentity = commaParts[0] || "";
 
-            for (let i = 1; i < commaParts.length; i++) {
-                const part = commaParts[i].trim();
-                if (part.startsWith("scaled:")) {
-                    const crVal = parseFloat(part.substring("scaled:".length));
-                    if (!isNaN(crVal)) targetCr = crVal;
-                }
-            }
+            const parsed = parseScaledCr(commaParts);
+            if (parsed !== null) targetCr = parsed;
 
             if (mainIdentity.includes("_")) {
                 const hashParts = mainIdentity.split("_");
