@@ -1,14 +1,18 @@
 {
   "name": "tmp-app",
   "private": true,
-  "version": "1.6.3",
+  "version": "1.6.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync:version": "node scripts/sync-version.mjs",
+    "bump:patch": "npm version patch --no-git-tag-version && npm run sync:version",
+    "bump:minor": "npm version minor --no-git-tag-version && npm run sync:version",
+    "bump:major": "npm version major --no-git-tag-version && npm run sync:version"
   },
   "dependencies": {
     "@owlbear-rodeo/sdk": "^3.1.0",
