@@ -3,6 +3,7 @@ import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID } from "./Background";
 import { render5etoolsText, render5etoolsPlainText } from "./utils/renderer";
 import { evaluateRoll } from "./utils/diceRoller";
+import { APP_VERSION } from "./version";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Constants & lookup tables
@@ -677,7 +678,7 @@ export default function ViewPopover() {
 
     if (!monster) {
         return (
-            <div>Loading (v1.6.3)...</div>
+            <div>Loading (v{APP_VERSION})...</div>
         );
     }
 
@@ -947,7 +948,7 @@ export default function ViewPopover() {
 
             {/* Footer / Debug */}
             <div style={{ marginTop: "24px", paddingTop: "8px", borderTop: "1px solid #ccc", fontSize: "10px", color: "#999", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>v1.6.3</span>
+                <span>v{APP_VERSION}</span>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     {rollEngine === 'dice-plus' && !activeDice && (
                         <button 

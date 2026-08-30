@@ -138,11 +138,20 @@ The `activeDice` boolean gates whether dice elements are clickable. It can also 
 
 ---
 
+## Version Management (Single Source of Truth)
+
+`package.json` `version` is the **only** place to bump the version. Runtime code must **not** hardcode version strings.
+
+* **Runtime (TSX):** `import { APP_VERSION } from "./version"` (`src/version.ts` re-exports `package.json` version via `resolveJsonModule`). Use `v{APP_VERSION}` in footers/loading/error UI. See `src/HelpPopover.tsx`, `src/ImportPopover.tsx`, `src/ViewPopover.tsx`, `src/main.tsx`.
+* **Manifest & docs:** `public/manifest.json` and `docs/overview.md` are generated from `package.json` — do not edit `version` manually. Run `npm run sync:version` (or `node scripts/sync-version.mjs`) after bumping `package.json`.
+* **Bumping:** `npm run bump:patch` / `bump:minor` / `bump:major` — does `npm version --no-git-tag-version` + `sync:version`. For manual bump, edit `package.json` then `npm run sync:version` (updates `package-lock.json` via `npm version`, manifest, docs).
+
 ## What NOT to Do
 
 - Do not add a router library (react-router, etc.) — hash routing is intentional.
 - Do not use `.scale()` on tokens — it breaks Stat Bubbles compatibility.
 - Do not hardcode metadata key strings — always use constants from `Background.ts`.
+- Do not hardcode version strings in TSX/manifest/docs — use `APP_VERSION` or `sync:version`.
 - Do not add CSS files or a CSS framework — use inline styles to match existing code.
 - Do not write to metadata without the full Stat Bubbles structure when modifying health/AC — other extensions depend on the exact key names.
 - Do not bypass the GM role check in any popover or background script.

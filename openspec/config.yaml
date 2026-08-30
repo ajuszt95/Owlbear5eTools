@@ -1,13 +1,9 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Tech stack: React 19 + TypeScript + Vite 7, OBR SDK v3, Vitest, ESLint 9
+  Domain: Owlbear Rodeo 2.0 extension bridging 5e.tools bestiary → OBR tokens (GM-only)
+  Version is single-source in package.json; runtime reads via src/version.ts APP_VERSION (resolveJsonModule). public/manifest.json and docs/overview.md are synced from package.json via scripts/sync-version.mjs (npm run sync:version). Bump via npm run bump:patch|minor|major (npm version --no-git-tag-version + sync).
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
