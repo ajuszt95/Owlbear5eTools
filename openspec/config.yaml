@@ -1,0 +1,28 @@
+schema: spec-driven
+
+context: |
+  Tech stack: React 19 + TypeScript + Vite 7, OBR SDK v3, Vitest, ESLint 9
+  Domain: Owlbear Rodeo 2.0 extension bridging 5e.tools bestiary → OBR tokens (GM-only)
+  Version is single-source in package.json; runtime reads via src/version.ts APP_VERSION (resolveJsonModule). public/manifest.json and docs/overview.md are synced from package.json via scripts/sync-version.mjs (npm run sync:version). Bump via npm run bump:patch|minor|major (npm version --no-git-tag-version + sync).
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
