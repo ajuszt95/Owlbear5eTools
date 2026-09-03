@@ -40,6 +40,7 @@ index.html#/view?id=ID     → <ViewPopover />   (full stat block viewer, 350×6
 ### `src/Background.ts`
 - Exports all shared **constant identifiers** (extension ID, metadata keys, Stat Bubbles keys).
 - `initBackground()`: called when hash is `#background`. Registers the right-click context menu (GM only). On click, checks if the token already has monster metadata — opens `view-popover` if yes, `import-popover` if no.
+- `initInitiativeSafetyNet()`: GM-only background listener that completes orphaned Dice+ initiative rolls when the ViewPopover closes mid-roll (writes if absent, notifies without overwriting if present). See `src/Background.spec.ts`.
 
 ### `src/api.ts`
 - `Monster` interface — the raw 5e.tools JSON schema with an extra `tokenUrl` and `sourceUrl` field attached after fetch.
