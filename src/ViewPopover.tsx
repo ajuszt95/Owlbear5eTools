@@ -771,7 +771,7 @@ export default function ViewPopover() {
             const first = await writeInitiative(tokenId, finalTotal, { overwrite: false });
             if (!first.written) {
                 const confirmText = isFallback
-                    ? `Token already has initiative ${first.previous}. Overwrite with ${finalTotal}? (local fallback)`
+                    ? `Token already has initiative ${first.previous}. Overwrite with ${finalTotal}? (rolled locally)`
                     : `Token already has initiative ${first.previous}. Overwrite with ${finalTotal}?`;
                 // Tell the background safety net a human is deciding, so it stands down.
                 try {
@@ -787,7 +787,7 @@ export default function ViewPopover() {
                         const base = finalTotal === fallbackResult.total
                             ? fallbackResult.formattedText
                             : `${fallbackResult.formattedText} (tiebreak ${finalTotal})`;
-                        await OBR.notification.show(`${base} (local fallback)`, fallbackResult.variant);
+                        await OBR.notification.show(`${base} (rolled locally)`, fallbackResult.variant);
                     }
                     return;
                 }
@@ -798,7 +798,7 @@ export default function ViewPopover() {
                 const base = finalTotal === fallbackResult.total
                     ? fallbackResult.formattedText
                     : `${fallbackResult.formattedText} (tiebreak ${finalTotal})`;
-                await OBR.notification.show(`${base} (local fallback)`, fallbackResult.variant);
+                await OBR.notification.show(`${base} (rolled locally)`, fallbackResult.variant);
             }
             // On Dice+ success the Dice+ extension already displays the roll.
         } catch (err: unknown) {
@@ -1150,9 +1150,10 @@ export default function ViewPopover() {
                     {rollEngine === 'dice-plus' && !activeDice && (
                         <button 
                             onClick={() => setForceDice(true)}
+                            title="Dice+ didn't respond — enable rolls anyway (use this if Dice+ is installed)"
                             style={{ background: "none", border: "none", color: "#58180D", textDecoration: "underline", cursor: "pointer", fontSize: "10px", padding: 0 }}
                         >
-                            Force Enable
+                            Enable anyway
                         </button>
                     )}
                     <span style={{ color: activeDice ? "#080" : "#800" }}>

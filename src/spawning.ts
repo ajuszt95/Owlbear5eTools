@@ -1,13 +1,12 @@
 import OBR, { buildImage } from "@owlbear-rodeo/sdk";
-import { fetchMonsterData, extractAC, extractHP, getMonsterDimensions } from "./api";
+import { fetchMonsterData, fetchMonsterByIdentity, extractAC, extractHP, getMonsterDimensions, type Monster } from "./api";
 import { METADATA_KEY, BUBBLES_METADATA_KEY } from "./Background";
 
 /**
- * Spawns a new monster token in the center of the player's viewport.
- * Automatically configures dimensions and Stat Bubbles metadata.
+ * Shared token-building core: sizes via DPI (never .scale()), centers in
+ * the viewport, and writes both monster + Stat Bubbles metadata at once.
  */
-export async function spawnMonster(url: string, itemWidth: number, itemHeight: number) {
-    const monster = await fetchMonsterData(url);
+async function addMonsterToken(monster: Monster, itemWidth: number, itemHeight: number) {
     const hp = extractHP(monster);
     const ac = extractAC(monster);
     const { multiplier } = getMonsterDimensions(monster.size);
@@ -62,4 +61,22 @@ export async function spawnMonster(url: string, itemWidth: number, itemHeight: n
         .build();
 
     await OBR.scene.items.addItems([imageItem]);
+}
+
+/**
+ * Spawns a new monster token in the center of the player's viewport.
+ * Automatically configures dimensions and Stat Bubbles metadata.
+ */
+export async function spawnMonster(url: string, itemWidth: number, itemHeight: number) {
+    const monster = await fetchMonsterData(url);
+    await addMonsterToken(monster, itemWidth, itemHeight);
+}
+
+/**
+ * Search-pick equivalent of spawnMonster: spawns by exact
+ * {name, source} identity with the same sizing + Bubbles sync.
+ */
+export async function spawnMonsterByIdentity(name: string, source: string, itemWidth: number, itemHeight: number) {
+    const monster = await fetchMonsterByIdentity(name, source);
+    await addMonsterToken(monster, itemWidth, itemHeight);
 }

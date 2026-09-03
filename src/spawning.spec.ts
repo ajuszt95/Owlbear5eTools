@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { spawnMonster } from './spawning';
+import { spawnMonster, spawnMonsterByIdentity } from './spawning';
 import * as api from './api';
 import OBR from '@owlbear-rodeo/sdk';
 
@@ -52,6 +52,22 @@ describe('spawning.ts - spawnMonster', () => {
         await spawnMonster('https://5e.tools/bestiary.html#owlbear_mm', 280, 280);
 
         expect(api.fetchMonsterData).toHaveBeenCalledWith('https://5e.tools/bestiary.html#owlbear_mm');
+        expect(OBR.scene.items.addItems).toHaveBeenCalledWith([{ id: 'mock-item' }]);
+    });
+
+    it('should spawn by identity with the same scene call as the URL flow', async () => {
+        vi.spyOn(api, 'fetchMonsterByIdentity').mockResolvedValueOnce({
+            name: 'Owlbear',
+            source: 'MM',
+            hp: { average: 59 },
+            ac: [13],
+            size: ['L'],
+            tokenUrl: 'https://example.com/owlbear.webp',
+        });
+
+        await spawnMonsterByIdentity('Owlbear', 'MM', 280, 280);
+
+        expect(api.fetchMonsterByIdentity).toHaveBeenCalledWith('Owlbear', 'MM');
         expect(OBR.scene.items.addItems).toHaveBeenCalledWith([{ id: 'mock-item' }]);
     });
 });

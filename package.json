@@ -10,6 +10,7 @@
     "test": "vitest run",
     "preview": "vite preview",
     "sync:version": "node scripts/sync-version.mjs",
+    "build:index": "node scripts/build-monster-index.mjs",
     "bump:patch": "npm version patch --no-git-tag-version && npm run sync:version",
     "bump:minor": "npm version minor --no-git-tag-version && npm run sync:version",
     "bump:major": "npm version major --no-git-tag-version && npm run sync:version"
