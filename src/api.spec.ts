@@ -5,6 +5,8 @@ import {
     extractAC,
     extractHP,
     fetchMonsterData,
+    fetchMonsterByIdentity,
+    buildCanonicalSourceUrl,
     type Monster,
 } from './api';
 
@@ -204,6 +206,61 @@ describe('api.ts', () => {
             await expect(
                 fetchMonsterData('https://5e.tools/bestiary.html#nonexistent_mm')
             ).rejects.toThrow('No monsters found in book data for source: mm');
+        });
+    });
+
+    describe('fetchMonsterByIdentity', () => {
+        const originalFetch = global.fetch;
+
+        beforeEach(() => {
+            global.fetch = vi.fn();
+        });
+
+        afterEach(() => {
+            global.fetch = originalFetch;
+        });
+
+        it('should return the same monster as fetchMonsterData for the same identity', async () => {
+            const mockMonster: Monster = {
+                name: 'Goblin',
+                source: 'MM',
+                hp: { average: 7 },
+                ac: [15],
+                size: ['S'],
+            };
+
+            (global.fetch as any).mockResolvedValue({
+                ok: true,
+                json: async () => ({ monster: [mockMonster] }),
+            });
+
+            const viaUrl = await fetchMonsterData('https://5e.tools/bestiary.html#goblin_mm');
+            const viaIdentity = await fetchMonsterByIdentity('Goblin', 'MM');
+
+            expect(viaIdentity.name).toBe(viaUrl.name);
+            expect(viaIdentity.source).toBe(viaUrl.source);
+            expect(viaIdentity.tokenUrl).toBe(viaUrl.tokenUrl);
+            // Search picks synthesize a canonical 5e.tools URL.
+            expect(viaIdentity.sourceUrl).toBe(buildCanonicalSourceUrl('Goblin', 'MM'));
+            expect(viaUrl.sourceUrl).toBe('https://5e.tools/bestiary.html#goblin_mm');
+        });
+
+        it('should synthesize a canonical sourceUrl when none is provided', async () => {
+            const mockMonster: Monster = {
+                name: 'Ancient Red Dragon',
+                source: 'MM',
+                hp: { average: 546 },
+                ac: [22],
+                size: ['G'],
+            };
+
+            (global.fetch as any).mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ monster: [mockMonster] }),
+            });
+
+            const result = await fetchMonsterByIdentity('Ancient Red Dragon', 'MM');
+            expect(result.sourceUrl).toBe('https://5e.tools/bestiary.html#ancient%20red%20dragon_mm');
         });
     });
 });

@@ -59,6 +59,92 @@ function parseScaledCr(commaParts: string[]): number | null {
     return null;
 }
 
+export function buildCanonicalSourceUrl(name: string, source: string): string {
+    return `https://5e.tools/bestiary.html#${encodeURIComponent(name.toLowerCase())}_${source.toLowerCase()}`;
+}
+
+export interface FetchByIdentityOptions {
+    targetCr?: number | null;
+    sourceUrl?: string;
+}
+
+export async function fetchMonsterByIdentity(
+    name: string,
+    source: string,
+    opts?: FetchByIdentityOptions
+): Promise<Monster> {
+    const cleanSource = source.trim();
+    const cleanName = name.trim();
+    if (!cleanSource || !cleanName) {
+        throw new Error("Import failed: Could not extract creature name or source book.");
+    }
+
+    try {
+        // Fetch the JSON for the specific book
+        const jsonUrl = `${GITHUB_MIRROR_BASE}/bestiary-${cleanSource.toLowerCase()}.json`;
+        const response = await fetch(jsonUrl);
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch Bestiary data for book: ${cleanSource}. (Status ${response.status})`);
+        }
+
+        const data = await response.json();
+        const monsterList: Monster[] = data.monster;
+
+        if (!monsterList || monsterList.length === 0) {
+            throw new Error(`No monsters found in book data for source: ${cleanSource}`);
+        }
+
+        // Find the specific monster
+        // Use a more relaxed sanitizer for external URLs which might have complex characters
+        const sanitize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const targetNameSanitized = sanitize(cleanName);
+
+        let foundMonster = monsterList.find((m) =>
+            sanitize(m.name) === targetNameSanitized ||
+            targetNameSanitized === sanitize(m.name)
+        );
+
+        // Fallback matching if exact sanitized match fails
+        if (!foundMonster) {
+            foundMonster = monsterList.find(m =>
+                sanitize(m.name).startsWith(targetNameSanitized) ||
+                targetNameSanitized.startsWith(sanitize(m.name))
+            );
+        }
+
+        if (!foundMonster) {
+            throw new Error(`Monster matching '${cleanName}' not found in the '${cleanSource}' book data.`);
+        }
+
+        // Attach resolved token URL for the Quick Spawn feature
+        if (foundMonster.hasToken || foundMonster.tokenUrl === undefined) {
+            foundMonster.tokenUrl = calculateTokenUrl(foundMonster.name, foundMonster.source);
+        }
+
+        // Store original source URL for hyperlink support.
+        // Search picks synthesize a canonical 5e.tools URL so the
+        // ViewPopover "view on 5e.tools" link still works.
+        foundMonster.sourceUrl = opts?.sourceUrl ?? buildCanonicalSourceUrl(foundMonster.name, foundMonster.source);
+
+        // Apply CR scaling if targetCr is present
+        const targetCr = opts?.targetCr ?? null;
+        if (targetCr !== null) {
+            foundMonster = scaleMonster(foundMonster, targetCr);
+        }
+
+        return foundMonster;
+    } catch (err: any) {
+        if (err.message?.startsWith("Import failed:")) {
+            throw err;
+        }
+        if (err.message) {
+            throw new Error(`Import failed: ${err.message}`);
+        }
+        throw new Error("Invalid URL or network error fetching 5e.tools data.");
+    }
+}
+
 export async function fetchMonsterData(url: string): Promise<Monster> {
     let source = "";
     let nameIdentifier = "";
@@ -81,7 +167,7 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
 
             const parsed = parseScaledCr(commaParts);
             if (parsed !== null) targetCr = parsed;
-            
+
             if (mainIdentity.includes("_")) {
                 const parts = mainIdentity.split("_");
                 source = searchParams.get("source") || parts.pop() || "";
@@ -111,7 +197,7 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
         else if (urlObj.pathname.includes(".html") && urlObj.pathname.includes("/")) {
             const pathPart = urlObj.pathname.split("/").pop() || "";
             const nameWithoutExt = pathPart.replace(".html", "");
-            
+
             // The path format often uses dashes instead of underscores
             const pathParts = nameWithoutExt.split("-");
             if (pathParts.length >= 2) {
@@ -124,58 +210,13 @@ export async function fetchMonsterData(url: string): Promise<Monster> {
             throw new Error("Invalid 5e.tools URL format. Could not extract creature name or source book.");
         }
 
-        // Fetch the JSON for the specific book
-        const jsonUrl = `${GITHUB_MIRROR_BASE}/bestiary-${source.toLowerCase()}.json`;
-        const response = await fetch(jsonUrl);
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch Bestiary data for book: ${source}. (Status ${response.status})`);
-        }
-
-        const data = await response.json();
-        const monsterList: Monster[] = data.monster;
-
-        if (!monsterList || monsterList.length === 0) {
-            throw new Error(`No monsters found in book data for source: ${source}`);
-        }
-
-        // Find the specific monster
-        // Use a more relaxed sanitizer for external URLs which might have complex characters
-        const sanitize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const targetNameSanitized = sanitize(nameIdentifier);
-
-        let foundMonster = monsterList.find((m) =>
-            sanitize(m.name) === targetNameSanitized ||
-            targetNameSanitized === sanitize(m.name)
-        );
-
-        // Fallback matching if exact sanitized match fails
-        if (!foundMonster) {
-            foundMonster = monsterList.find(m => 
-                sanitize(m.name).startsWith(targetNameSanitized) || 
-                targetNameSanitized.startsWith(sanitize(m.name))
-            );
-        }
-
-        if (!foundMonster) {
-            throw new Error(`Monster matching '${nameIdentifier}' not found in the '${source}' book data.`);
-        }
-
-        // Attach resolved token URL for the Quick Spawn feature
-        if (foundMonster.hasToken || foundMonster.tokenUrl === undefined) {
-            foundMonster.tokenUrl = calculateTokenUrl(foundMonster.name, foundMonster.source);
-        }
-
-        // Store original source URL for hyperlink support
-        foundMonster.sourceUrl = url;
-
-        // Apply CR scaling if targetCr is present
-        if (targetCr !== null) {
-            foundMonster = scaleMonster(foundMonster, targetCr);
-        }
-
-        return foundMonster;
+        // Delegate to the shared identity core (same matching +
+        // tokenUrl/sourceUrl attachment + CR scaling as search picks).
+        return await fetchMonsterByIdentity(nameIdentifier, source, { targetCr, sourceUrl: url });
     } catch (err: any) {
+        if (err.message?.startsWith("Import failed:")) {
+            throw err;
+        }
         if (err.message) {
             throw new Error(`Import failed: ${err.message}`);
         }

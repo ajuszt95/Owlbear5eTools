@@ -1,28 +1,34 @@
 import { useState } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { EXTENSION_ID, METADATA_KEY, BUBBLES_METADATA_KEY, BUBBLES_NAME } from "./Background";
-import { fetchMonsterData, extractAC, extractHP } from "./api";
+import { fetchMonsterData, fetchMonsterByIdentity, extractAC, extractHP } from "./api";
+import MonsterSearchInput from "./MonsterSearchInput";
+import type { MonsterIndexEntry } from "./monsterIndex";
+import { formatMonsterEntrySubtitle } from "./monsterIndex";
 import { APP_VERSION } from "./version";
 
 export default function ImportPopover() {
     const [url, setUrl] = useState("");
+    const [selectedEntry, setSelectedEntry] = useState<MonsterIndexEntry | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
     const handleImport = async () => {
         setLoading(true);
         setError("");
-        console.log("Starting import for URL:", url);
+        console.log("Starting import for URL:", url, "selected:", selectedEntry);
 
         try {
             const urlParams = new URLSearchParams(window.location.hash.split("?")[1] || "");
             const tokenId = urlParams.get("id");
 
             if (!tokenId) {
-                throw new Error("No token selected.");
+                throw new Error("No token selected. Right-click a token and choose 5e Tools to try again.");
             }
 
-            const monsterData = await fetchMonsterData(url);
+            const monsterData = selectedEntry
+                ? await fetchMonsterByIdentity(selectedEntry.n, selectedEntry.s)
+                : await fetchMonsterData(url);
             const hp = extractHP(monsterData);
             const ac = extractAC(monsterData);
 
@@ -84,7 +90,7 @@ export default function ImportPopover() {
                     Monster Import
                 </h1>
                 <p style={{ color: "#666", fontSize: "14px", margin: 0 }}>
-                    Enter a 5e.tools Bestiary URL to sync stats.
+                    Search for a monster, or enter a 5e.tools Bestiary URL to sync stats.
                 </p>
             </header>
 
@@ -104,13 +110,51 @@ export default function ImportPopover() {
                         marginBottom: "6px",
                         textTransform: "uppercase"
                     }}>
-                        5e.tools Bestiary URL
+                        Search monsters
+                    </label>
+                    <MonsterSearchInput
+                        id="import-search"
+                        placeholder="Type a monster name… (e.g. goblin)"
+                        onSelect={(entry) => {
+                            setSelectedEntry(entry);
+                            setUrl("");
+                            setError("");
+                        }}
+                    />
+                    {selectedEntry && (
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginTop: "8px", padding: "8px 12px", background: "rgba(88, 24, 13, 0.06)", border: "1px solid #e0d0b0", borderRadius: "8px", fontSize: "13px" }}>
+                            <span>
+                                <strong style={{ color: "#58180D" }}>{selectedEntry.n}</strong>
+                                <span style={{ color: "#666" }}> · {formatMonsterEntrySubtitle(selectedEntry)}</span>
+                            </span>
+                            <button
+                                onClick={() => setSelectedEntry(null)}
+                                style={{ padding: "2px 8px", fontSize: "12px", background: "transparent", color: "#58180D", border: "1px solid #58180D", borderRadius: "6px", cursor: "pointer" }}
+                            >
+                                Clear
+                            </button>
+                        </div>
+                    )}
+                </div>
+                <div style={{ marginBottom: "16px" }}>
+                    <label style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "#58180D",
+                        marginBottom: "6px",
+                        textTransform: "uppercase"
+                    }}>
+                        Or paste a 5e.tools URL
                     </label>
                     <input
                         type="text"
                         placeholder="https://5e.tools/bestiary.html#..."
                         value={url}
-                        onChange={(e) => setUrl(e.target.value)}
+                        onChange={(e) => {
+                            setUrl(e.target.value);
+                            setSelectedEntry(null);
+                        }}
                         style={{
                             width: "100%",
                             padding: "12px",
@@ -136,33 +180,36 @@ export default function ImportPopover() {
                         border: "1px solid #fcc"
                     }}>
                         <strong>Error:</strong> {error}
+                        <div style={{ marginTop: "4px", color: "#666" }}>
+                            Tip: pick the monster from search, or double-check the URL and retry.
+                        </div>
                     </div>
                 )}
 
                 <button
                     onClick={handleImport}
-                    disabled={loading || !url}
+                    disabled={loading || (!url && !selectedEntry)}
                     style={{
                         width: "100%",
                         padding: "14px",
-                        cursor: (loading || !url) ? "not-allowed" : "pointer",
-                        background: (loading || !url) ? "#ccc" : "#58180D",
+                        cursor: (loading || (!url && !selectedEntry)) ? "not-allowed" : "pointer",
+                        background: (loading || (!url && !selectedEntry)) ? "#ccc" : "#58180D",
                         color: "white",
                         border: "none",
                         borderRadius: "8px",
                         fontSize: "16px",
                         fontWeight: 600,
                         transition: "all 0.2s ease",
-                        boxShadow: (loading || !url) ? "none" : "0 4px 8px rgba(88, 24, 13, 0.2)"
+                        boxShadow: (loading || (!url && !selectedEntry)) ? "none" : "0 4px 8px rgba(88, 24, 13, 0.2)"
                     }}
                     onMouseOver={(e) => {
-                        if (!loading && url) e.currentTarget.style.background = "#7a2212";
+                        if (!loading && (url || selectedEntry)) e.currentTarget.style.background = "#7a2212";
                     }}
                     onMouseOut={(e) => {
-                        if (!loading && url) e.currentTarget.style.background = "#58180D";
+                        if (!loading && (url || selectedEntry)) e.currentTarget.style.background = "#58180D";
                     }}
                 >
-                    {loading ? "Importing Data..." : "Import Monster"}
+                    {loading ? "Importing Data…" : "Import Monster"}
                 </button>
             </div>
 
