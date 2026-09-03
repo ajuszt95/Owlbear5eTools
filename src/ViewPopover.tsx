@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import OBR from "@owlbear-rodeo/sdk";
-import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID } from "./Background";
+import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID, INITIATIVE_METADATA_KEY } from "./Background";
 import { render5etoolsText, render5etoolsPlainText } from "./utils/renderer";
 import { evaluateRoll } from "./utils/diceRoller";
+import { dexModifier, initiativeNotation, initiativeTiebreakTotal, rollInitiativeBasic, writeInitiative } from "./initiative";
 import { APP_VERSION } from "./version";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -548,6 +549,7 @@ export default function ViewPopover() {
     const [isDiceReady, setIsDiceReady] = useState(false);
     const [forceDice, setForceDice] = useState(false);
     const [isRolling, setIsRolling] = useState(false);
+    const [isInitiativeRolling, setIsInitiativeRolling] = useState(false);
     const [rollEngine, setRollEngine] = useState<'dice-plus' | 'basic'>(() => {
         return (localStorage.getItem("5etools-roll-engine") as 'dice-plus' | 'basic') || "dice-plus";
     });
@@ -646,11 +648,176 @@ export default function ViewPopover() {
                 delete item.metadata[METADATA_KEY];
                 delete item.metadata[BUBBLES_METADATA_KEY];
                 delete item.metadata["com.owlbear-rodeo-bubbles-extension/name"];
+                delete item.metadata[INITIATIVE_METADATA_KEY];
                 item.name = "Token";
             });
             await OBR.popover.close(`${EXTENSION_ID}/view-popover`);
         } catch (err: any) {
             setError(`Failed to remove: ${err.message}`);
+        }
+    };
+
+    const handleRollInitiative = async () => {
+        if (!tokenId || !monster || isInitiativeRolling) return;
+        if (rollEngine === 'dice-plus' && isRolling) return;
+
+        const monsterName = monster._displayName || monster.name || "creature";
+        const mod = dexModifier(monster.dex);
+
+        // ── Basic engine: local roll, then write ──────────────────────────────
+        if (rollEngine === 'basic') {
+            setIsInitiativeRolling(true);
+            try {
+                const result = rollInitiativeBasic(monster);
+                const finalTotal = initiativeTiebreakTotal(result.total, mod);
+                const shownText = finalTotal === result.total
+                    ? result.formattedText
+                    : `${result.formattedText} (tiebreak ${finalTotal})`;
+                const first = await writeInitiative(tokenId, finalTotal, { overwrite: false });
+                if (!first.written) {
+                    const ok = window.confirm(`Token already has initiative ${first.previous}. Overwrite with ${finalTotal}?`);
+                    if (!ok) {
+                        await OBR.notification.show(shownText, result.variant);
+                        return;
+                    }
+                    await writeInitiative(tokenId, finalTotal, { overwrite: true });
+                }
+                await OBR.notification.show(shownText, result.variant);
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                await OBR.notification.show(`Failed to roll initiative: ${msg}`, "ERROR");
+            } finally {
+                setIsInitiativeRolling(false);
+            }
+            return;
+        }
+
+        // ── Dice+ engine: broadcast, await matched rollId, 10 s local fallback ──
+        setIsInitiativeRolling(true);
+        setIsRolling(true);
+        // Hoisted for the finally block (stands the safety net down on every exit).
+        let rid = "";
+        try {
+            const notation = initiativeNotation(mod, monsterName);
+            const player = await OBR.player.getName();
+            const playerId = await OBR.player.getId();
+            const ts = Date.now();
+            rid = "init_" + ts + "_" + Math.random().toString(36).substring(7);
+
+            // Let the background safety net complete this roll if the popover
+            // closes mid-roll (its own await would die with this JS context).
+            try {
+                await OBR.broadcast.sendMessage(
+                    `${EXTENSION_ID}/initiative-pending`,
+                    { rollId: rid, tokenId, mod },
+                    { destination: 'ALL' }
+                );
+            } catch { /* safety net is best-effort */ }
+
+            // Listen BEFORE broadcast to avoid missing a fast response.
+            const totalPromise = new Promise<number | null>((resolve) => {
+                const state = { settled: false, timer: undefined as ReturnType<typeof setTimeout> | undefined };
+                const unsub = OBR.broadcast.onMessage(`${EXTENSION_ID}/roll-result`, (event: unknown) => {
+                    const wrapper = event as { data?: unknown } | undefined;
+                    const payload = (wrapper?.data ?? event) as {
+                        rollId?: unknown;
+                        result?: { totalValue?: unknown };
+                        totalValue?: unknown;
+                        total?: unknown;
+                    } | undefined;
+                    if (payload?.rollId === rid) {
+                        const totalVal = payload?.result?.totalValue ?? payload?.totalValue ?? payload?.total;
+                        if (typeof totalVal === "number") {
+                            if (state.settled) return;
+                            state.settled = true;
+                            if (state.timer) clearTimeout(state.timer);
+                            try { unsub(); } catch { /* noop */ }
+                            resolve(totalVal);
+                        }
+                    }
+                });
+                state.timer = setTimeout(() => {
+                    if (state.settled) return;
+                    state.settled = true;
+                    try { unsub(); } catch { /* noop */ }
+                    resolve(null);
+                }, 10_000);
+            });
+
+            const payload = {
+                rollId: rid,
+                playerId: playerId,
+                playerName: player,
+                rollTarget: rollTarget,
+                diceNotation: notation,
+                showResults: true,
+                timestamp: ts,
+                source: EXTENSION_ID,
+            };
+            await OBR.broadcast.sendMessage("dice-plus/roll-request", payload, { destination: 'ALL' });
+
+            const dicePlusTotal = await totalPromise;
+            let finalTotal: number;
+            let isFallback = false;
+            let fallbackResult: ReturnType<typeof rollInitiativeBasic> | null = null;
+            if (dicePlusTotal !== null) {
+                finalTotal = initiativeTiebreakTotal(dicePlusTotal, mod);
+            } else {
+                fallbackResult = rollInitiativeBasic(monster);
+                finalTotal = initiativeTiebreakTotal(fallbackResult.total, mod);
+                isFallback = true;
+            }
+
+            const first = await writeInitiative(tokenId, finalTotal, { overwrite: false });
+            if (!first.written) {
+                const confirmText = isFallback
+                    ? `Token already has initiative ${first.previous}. Overwrite with ${finalTotal}? (local fallback)`
+                    : `Token already has initiative ${first.previous}. Overwrite with ${finalTotal}?`;
+                // Tell the background safety net a human is deciding, so it stands down.
+                try {
+                    await OBR.broadcast.sendMessage(
+                        `${EXTENSION_ID}/initiative-awaiting-confirm`,
+                        { rollId: rid },
+                        { destination: 'ALL' }
+                    );
+                } catch { /* safety net is best-effort */ }
+                const ok = window.confirm(confirmText);
+                if (!ok) {
+                    if (isFallback && fallbackResult) {
+                        const base = finalTotal === fallbackResult.total
+                            ? fallbackResult.formattedText
+                            : `${fallbackResult.formattedText} (tiebreak ${finalTotal})`;
+                        await OBR.notification.show(`${base} (local fallback)`, fallbackResult.variant);
+                    }
+                    return;
+                }
+                await writeInitiative(tokenId, finalTotal, { overwrite: true });
+            }
+
+            if (isFallback && fallbackResult) {
+                const base = finalTotal === fallbackResult.total
+                    ? fallbackResult.formattedText
+                    : `${fallbackResult.formattedText} (tiebreak ${finalTotal})`;
+                await OBR.notification.show(`${base} (local fallback)`, fallbackResult.variant);
+            }
+            // On Dice+ success the Dice+ extension already displays the roll.
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            await OBR.notification.show(`Failed to roll initiative: ${msg}`, "ERROR");
+        } finally {
+            setIsRolling(false);
+            setIsInitiativeRolling(false);
+            // This roll is resolved (written, cancelled, or failed) — stand the
+            // background safety net down. Best-effort: may not send during teardown.
+            if (rid) {
+                try {
+                    await OBR.broadcast.sendMessage(
+                        `${EXTENSION_ID}/initiative-settled`,
+                        { rollId: rid },
+                        { destination: 'ALL' }
+                    );
+                } catch { /* safety net is best-effort */ }
+            }
         }
     };
 
@@ -752,6 +919,10 @@ export default function ViewPopover() {
         ? `The ${legendaryName} can take 3 legendary actions, choosing from the options below. Only one legendary action option can be used at a time and only at the end of another creature's turn. The ${legendaryName} regains spent legendary actions at the start of its turn.`
         : null;
 
+    const initMod = dexModifier(monster.dex);
+    const initFormulaLabel = initMod === 0 ? "1d20" : `1d20${initMod > 0 ? `+${initMod}` : initMod}`;
+    const isInitiativeBlocked = isInitiativeRolling || (rollEngine === 'dice-plus' && isRolling);
+
     // ── Render ──────────────────────────────────────────────────────────────
 
     return (
@@ -774,6 +945,32 @@ export default function ViewPopover() {
             {/* Type line */}
             <div style={{ fontStyle: "italic", fontSize: "14px", marginBottom: "8px" }}>
                 {displaySize} {typeText}{alignText ? `, ${alignText}` : ""}
+            </div>
+
+            {/* Roll initiative — writes to the official Initiative Tracker metadata */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                <button
+                    onClick={handleRollInitiative}
+                    disabled={isInitiativeBlocked}
+                    title={`Roll ${initFormulaLabel} for initiative via ${rollEngine === 'basic' ? 'Basic roller' : 'Dice+'}`}
+                    style={{
+                        padding: "4px 12px",
+                        cursor: isInitiativeBlocked ? "not-allowed" : "pointer",
+                        background: isInitiativeBlocked ? "#ccc" : "#58180D",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        opacity: isInitiativeBlocked ? 0.7 : 1,
+                        whiteSpace: "nowrap",
+                    }}
+                >
+                    {isInitiativeRolling ? "Rolling initiative…" : "Roll initiative"}
+                </button>
+                <span style={{ fontStyle: "italic", fontSize: "11px", color: "#999" }}>
+                    Keep open while the die rolls.
+                </span>
             </div>
 
             <hr style={{ border: "1px solid #58180D", margin: "8px 0" }} />
