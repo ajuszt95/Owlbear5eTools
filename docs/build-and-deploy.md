@@ -23,15 +23,69 @@ sources:
 - Node.js 20+
 - npm
 
-## Local development
+## Local development (HTTPS dev loop)
+
+Owlbear Rodeo runs on HTTPS, so a plain-HTTP localhost dev server is blocked as
+mixed content. This repo therefore serves the extension over HTTPS (self-signed
+cert, dev only) and installs it as a **separate `(DEV)` extension** alongside the
+store version — a different manifest URL means a separate install. Everyday
+testing is **edit → save → reopen the popover** (~2 s hot reload): no merge, no
+version bump, no deploy.
+
+### One-time setup
 
 ```bash
-npm install        # install dependencies
-npm run dev        # Vite dev server (HMR enabled)
+npm install        # installs @vitejs/plugin-basic-ssl (dev-only cert plugin)
+npm run dev        # HTTPS dev server on https://localhost:5173/ (fixed port)
 ```
 
-The dev server runs on `http://localhost:5173` by default. To test against Owlbear Rodeo, use the
-OBR developer extension loader and point it at `http://localhost:5173/Owlbear5eTools/manifest.json`.
+1. Trust the self-signed cert **once**: visit
+   `https://localhost:5173/Owlbear5eTools/manifest-dev.json` in your browser and
+   click through the warning. (Alternative: enable
+   `chrome://flags/#allow-insecure-localhost`. For a proper local CA, `mkcert`
+   is an option but not required.)
+2. In the Owlbear Rodeo room: **Extensions → Add Custom Extension** → paste
+   `https://localhost:5173/Owlbear5eTools/manifest-dev.json`. This persists, so
+   you only do it once.
+3. Confirm a second, distinctly-named action-bar entry
+   (`5e Tools Integration (DEV)`) appears next to the store version.
+
+The dev manifest (`public/manifest-dev.json`) mirrors the prod manifest except
+for the `(DEV)` name/title suffix and a static `version: "0.0.0-dev"`.
+`npm run sync:version` never touches it (guarded by `src/manifest-dev.spec.ts`).
+
+### Daily use
+
+- Edit code → save → **reopen the popover** in the room to see the change.
+- If hot reload misses the tiny popover iframe, close and reopen the popover.
+- `npm run dev` uses `strictPort`: if port 5173 is taken, Vite fails loudly
+  instead of drifting to another port — kill the old Vite process and retry.
+
+### Two-client testing (GM gating)
+
+Open the room in a **second window or incognito tab** as a player to verify the
+GM-only gating (restricted-access screens, no stat writes) while you test the GM
+flows in the main window.
+
+### Remote playtest via tunnel
+
+To let someone outside your machine test the dev build:
+
+```bash
+cloudflared tunnel --url https://localhost:5173
+```
+
+Install `https://<tunnel-host>/Owlbear5eTools/manifest-dev.json` as a custom
+extension in the room, playtest, then **kill the tunnel** when done.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `Port 5173 is already in use` on `npm run dev` | Kill the old Vite process; `strictPort` intentionally fails instead of moving ports |
+| Cert / blank iframe in OBR | Revisit the manifest-dev URL directly in a tab and re-accept the cert |
+| Popover shows stale UI after save | Close and reopen the popover (HMR can miss the small iframe) |
+| Can't tell dev vs store apart | Look for the `(DEV)` suffix in the action-bar entry and popover title |
 
 ## Running tests
 
@@ -39,7 +93,8 @@ OBR developer extension loader and point it at `http://localhost:5173/Owlbear5eT
 npm test           # vitest run (one-shot)
 ```
 
-Test files: `src/api.spec.ts`, `src/spawning.spec.ts`, `src/utils/renderer.spec.ts`.
+Test files: `src/**/*.spec.ts` (`api`, `spawning`, `manifest-dev`, `utils/renderer`,
+`utils/diceRoller`, `utils/scaleCreature*`).
 
 ## Linting
 

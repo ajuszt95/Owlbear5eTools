@@ -27,3 +27,7 @@ dist-ssr
 # Tool and index caches
 .slim
 *codemap.md
+
+# Local E2E secrets (Owlbear room URLs, browser profiles) — never commit
+.owlbear-e2e/
+*.e2e-room-url

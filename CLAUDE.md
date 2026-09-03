@@ -125,6 +125,8 @@ npm run lint      # ESLint check
 
 Pushing to `main` triggers the GitHub Actions workflow (`.github/workflows/deploy.yml`) which builds and deploys `./dist` to GitHub Pages. The live URL is the base for the OBR manifest entries.
 
+> After implementing a user-facing change, load the `owlbear-e2e` skill (`.opencode/skills/owlbear-e2e/SKILL.md`) and run the live-room smoke before claiming done.
+
 ---
 
 ## Adding Features — Checklist
