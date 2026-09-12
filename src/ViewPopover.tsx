@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID, INITIATIVE_METADATA_KEY } from "./Background";
-import { render5etoolsText, render5etoolsPlainText } from "./utils/renderer";
-import { evaluateRoll } from "./utils/diceRoller";
+import { render5etoolsText, render5etoolsPlainText, type RenderSegment } from "./utils/renderer";
+import { applyAdvantageNotation, critFormula, evaluateRoll, keptD20FromDicePlus, type Advantage } from "./utils/diceRoller";
 import { dexModifier, initiativeNotation, initiativeTiebreakTotal, rollInitiativeBasic, writeInitiative } from "./initiative";
 import { APP_VERSION } from "./version";
 
@@ -179,13 +179,20 @@ function formatCR(cr: any): { crText: string; lairText: string; xp: string } {
 // Entry Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsRolling }: {
-    segment: any;
+type RollControls = {
+    advantage: Advantage;
+    critArmed: boolean;
+    setCritArmed: (armed: boolean) => void;
+};
+
+const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsRolling, rollControls }: {
+    segment: Extract<RenderSegment, { type: 'roll' }>;
     active: boolean;
     rollTarget: string;
     rollEngine: 'dice-plus' | 'basic';
     isRolling: boolean;
     setIsRolling: (v: boolean) => void;
+    rollControls: RollControls;
 }) => {
     // Per-button debounce — prevents accidental double-clicks on the same button.
     const lastRollTime = useRef(0);
@@ -200,10 +207,19 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
         if (now - lastRollTime.current < 500) return;
         lastRollTime.current = now;
 
+        const isDamage = segment.kind === 'damage';
+        const rollFormula = isDamage && rollControls.critArmed ? critFormula(segment.formula) : segment.formula;
+        const advantage = segment.kind === 'attack' || segment.kind === 'check' || segment.kind === 'save' || segment.kind === 'dc'
+            ? rollControls.advantage
+            : 'normal';
+
         if (rollEngine === 'basic') {
             try {
-                const result = evaluateRoll(segment.formula, { label: segment.label });
-                await OBR.notification.show(result.formattedText, result.variant);
+                const result = evaluateRoll(rollFormula, { label: segment.label, advantage });
+                const critMessage = result.isNat20 && segment.kind === 'attack' ? "\nCrit armed for your next damage roll." : "";
+                if (result.isNat20 && segment.kind === 'attack') rollControls.setCritArmed(true);
+                if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
+                await OBR.notification.show(`${result.formattedText}${critMessage}`, result.variant);
                 console.log("[RollButton] Basic roll executed:", result);
             } catch (err) {
                 console.error("[RollButton] ERROR during basic roll:", err);
@@ -228,14 +244,44 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 playerId: playerId,
                 playerName: player,
                 rollTarget: rollTarget,
-                diceNotation: segment.formula,
+                diceNotation: isDamage && rollControls.critArmed
+                    ? critFormula(segment.formula)
+                    : applyAdvantageNotation(segment.formula, advantage),
                 showResults: true,
                 timestamp: ts,
                 source: EXTENSION_ID,
             };
 
+            // Attack rolls: watch for the Dice+ result to auto-arm crit on Nat20.
+            // Dice+ reports kept/dropped dice in result.groups — the kept d20
+            // decides (mirrors Basic's kept-die rule). Best-effort: if the
+            // popover closes mid-roll this listener dies with it and the user
+            // can still arm manually.
+            let unsubCrit: (() => void) | undefined;
+            let critTimer: ReturnType<typeof setTimeout> | undefined;
+            if (segment.kind === 'attack') {
+                const myRid = rid;
+                const cleanupCritWatch = () => {
+                    try { unsubCrit?.(); } catch { /* noop */ }
+                    if (critTimer) clearTimeout(critTimer);
+                };
+                critTimer = setTimeout(cleanupCritWatch, 30_000);
+                unsubCrit = OBR.broadcast.onMessage(`${EXTENSION_ID}/roll-result`, (event: unknown) => {
+                    const wrapper = event as { data?: unknown } | undefined;
+                    const p = (wrapper?.data ?? event) as any;
+                    if (p?.rollId !== myRid) return;
+                    cleanupCritWatch();
+                    if (keptD20FromDicePlus(p) === 20) {
+                        rollControls.setCritArmed(true);
+                        OBR.notification.show("Nat 20! Crit armed for your next damage roll.", "SUCCESS").catch(() => { /* noop */ });
+                    }
+                });
+            }
+
             await OBR.broadcast.sendMessage("dice-plus/roll-request", payload, { destination: 'ALL' });
-            console.log("[RollButton] Roll request sent to Dice+:", rid, segment.formula);
+            // Consume crit like Basic does — otherwise Dice+ stays armed forever.
+            if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
+            console.log("[RollButton] Roll request sent to Dice+:", rid, payload.diceNotation);
         } catch (err) {
             console.error("[RollButton] ERROR during Dice+ roll:", err);
             clearTimeout(safetyTimer);
@@ -246,13 +292,16 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
     if (!active) return <span>{segment.content}</span>;
 
     const isButtonBlocked = rollEngine === 'dice-plus' && isRolling;
+    const isDamageButton = segment.kind === 'damage';
+    const critPreview = isDamageButton && rollControls.critArmed ? critFormula(segment.formula) : segment.formula;
+    const isCritActive = isDamageButton && rollControls.critArmed && critPreview !== segment.formula;
 
     return (
         <span
             onClick={handleRoll}
-            title={isButtonBlocked ? "Roll in progress…" : `Click to roll ${segment.formula}`}
+            title={isButtonBlocked ? "Roll in progress…" : isCritActive ? `Crit! Click to roll ${critPreview} (doubled from ${segment.formula})` : `Click to roll ${segment.formula}`}
             style={{
-                color: "#58180D",
+                color: isCritActive ? "#b41414" : "#58180D",
                 textDecoration: "underline dotted",
                 cursor: isButtonBlocked ? "not-allowed" : "pointer",
                 opacity: isButtonBlocked ? 0.5 : 1,
@@ -260,25 +309,27 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 padding: "0 2px",
                 borderRadius: "3px",
                 transition: "background 0.2s, opacity 0.2s",
+                background: isCritActive ? "rgba(180, 20, 20, 0.15)" : "transparent",
+                borderBottom: isCritActive ? "2px solid #b41414" : "none",
             }}
-            onMouseOver={(e) => { if (!isButtonBlocked) e.currentTarget.style.background = "rgba(88, 24, 13, 0.1)"; }}
-            onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+            onMouseOver={(e) => { if (!isButtonBlocked) e.currentTarget.style.background = isCritActive ? "rgba(180, 20, 20, 0.25)" : "rgba(88, 24, 13, 0.1)"; }}
+            onMouseOut={(e) => (e.currentTarget.style.background = isCritActive ? "rgba(180, 20, 20, 0.15)" : "transparent")}
         >
-            {segment.content}
+            {isCritActive ? "💥 " : ""}{segment.content}
         </span>
     );
 };
 
-const renderMarkup = (text: string, active: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void) => {
+const renderMarkup = (text: string, active: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls) => {
     const segments = render5etoolsText(text);
     return segments.map((s, i) => (
         <span key={i}>
-            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} />}
+            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} rollControls={rollControls} />}
         </span>
     ));
 };
 
-const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, depth = 0): React.ReactNode => {
+const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, depth = 0): React.ReactNode => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
         if (e == null) return null;
@@ -287,7 +338,7 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         if (typeof e === "string") {
             return (
                 <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>
-                    {renderMarkup(e, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                    {renderMarkup(e, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                 </p>
             );
         }
@@ -300,8 +351,8 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         if (type === "entries" || (!type && e.name && e.entries)) {
             return (
                 <div key={i} style={{ marginBottom: "6px" }}>
-                    <strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}. </strong>
-                    {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, depth)}
+                    <strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}. </strong>
+                    {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth)}
                 </div>
             );
         }
@@ -311,20 +362,20 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
             if (e.name && e.entry) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}.</strong></em>{" "}
-                        {renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}.</strong></em>{" "}
+                        {renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                     </div>
                 );
             }
             if (e.name && e.entries) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}.</strong></em>{" "}
-                        {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, depth)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}.</strong></em>{" "}
+                        {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth)}
                     </div>
                 );
             }
-            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}</p>;
+            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</p>;
         }
 
         // List
@@ -335,7 +386,7 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                 <ul key={i} style={{ margin: "4px 0", paddingLeft: isHangNotitle ? "0" : "18px", listStyle: isHangNotitle ? "none" : "disc" }}>
                     {items.map((it: any, j: number) => (
                         <li key={j} style={{ marginBottom: "3px" }}>
-                            {renderEntries([it], activeDice, rollTarget, rollEngine, isRolling, setIsRolling, depth + 1)}
+                            {renderEntries([it], activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1)}
                         </li>
                     ))}
                 </ul>
@@ -355,10 +406,10 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                 }}>
                     {e.name && (
                         <div style={{ fontWeight: "bold", color: "#58180D", marginBottom: "4px" }}>
-                            {renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                            {renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                         </div>
                     )}
-                    {e.entries && renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, depth + 1)}
+                    {e.entries && renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1)}
                 </div>
             );
         }
@@ -370,14 +421,14 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
             const rows: any[][] = e.rows || [];
             return (
                 <div key={i} style={{ margin: "8px 0", overflowX: "auto" }}>
-                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}</div>}
+                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
                     <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>
                         {colLabels.length > 0 && (
                             <thead>
                                 <tr>
                                     {colLabels.map((col: string, j: number) => (
                                         <th key={j} style={{ border: "1px solid #ccc", padding: "3px 6px", background: "#e8d5b7", textAlign: "left" }}>
-                                             {renderMarkup(col, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                                             {renderMarkup(col, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                                         </th>
                                     ))}
                                 </tr>
@@ -389,9 +440,9 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                                     {row.map((cell: any, k: number) => (
                                         <td key={k} style={{ border: "1px solid #ccc", padding: "3px 6px" }}>
                                             {typeof cell === "string"
-                                                ? renderMarkup(cell, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)
+                                                ? renderMarkup(cell, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)
                                                 : typeof cell === "object" && cell?.type === "cell"
-                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice, rollTarget, rollEngine, isRolling, setIsRolling)
+                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)
                                                     : String(cell ?? "")}
                                         </td>
                                     ))}
@@ -404,8 +455,8 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         }
 
         // Fallback — try to render entries/entry if present
-        if (e.entries) return renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, depth);
-        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}</p>;
+        if (e.entries) return renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth);
+        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</p>;
 
         return null;
     });
@@ -415,14 +466,14 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
 // Spellcasting Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void) => {
+const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls) => {
     if (!spellcasting || !Array.isArray(spellcasting)) return null;
     return spellcasting.map((s, i) => (
         <div key={i} style={{ marginBottom: "12px", fontSize: "13px" }}>
             <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
                 {s.name || "Spellcasting"}
             </h3>
-            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}</div>}
+            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
 
             {/* At will */}
             {s.will && (
@@ -431,7 +482,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                     {s.will.map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                         </span>
                     ))}
                 </p>
@@ -448,7 +499,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                         {(v as any[]).map((sp: any, j: number) => (
                             <span key={j}>
                                 {j > 0 && ", "}
-                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                             </span>
                         ))}
                     </p>
@@ -466,13 +517,13 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                     {(data.spells || []).map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                         </span>
                     ))}
                 </p>
             ))}
 
-            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}</div>}
+            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
         </div>
     ));
 };
@@ -492,13 +543,14 @@ const getModifier = (score: number) => {
     return mod >= 0 ? `+${mod}` : `${mod}`;
 };
 
-const AbilityTable = ({ monster, active, rollTarget, rollEngine, isRolling, setIsRolling }: {
+const AbilityTable = ({ monster, active, rollTarget, rollEngine, isRolling, setIsRolling, rollControls }: {
     monster: any;
     active: boolean;
     rollTarget: string;
     rollEngine: 'dice-plus' | 'basic';
     isRolling: boolean;
     setIsRolling: (v: boolean) => void;
+    rollControls: RollControls;
 }) => {
     const abilities = ["str", "dex", "con", "int", "wis", "cha"];
     return (
@@ -509,12 +561,13 @@ const AbilityTable = ({ monster, active, rollTarget, rollEngine, isRolling, setI
                     <div style={{ fontSize: "14px" }}>
                         {monster[ab] ?? 10} (
                         <RollButton 
-                            segment={{ type: 'roll', content: getModifier(monster[ab] ?? 10), formula: `1d20${getModifier(monster[ab] ?? 10)}`, label: `${ab.toUpperCase()} Check` }} 
+                            segment={{ type: 'roll', content: getModifier(monster[ab] ?? 10), formula: `1d20${getModifier(monster[ab] ?? 10)}`, label: `${ab.toUpperCase()} Check`, kind: 'check' }}
                             active={active} 
                             rollTarget={rollTarget}
                             rollEngine={rollEngine}
                             isRolling={isRolling}
                             setIsRolling={setIsRolling}
+                            rollControls={rollControls}
                         />)
                     </div>
                 </div>
@@ -558,6 +611,12 @@ export default function ViewPopover() {
         if (savedEngine === "basic") return "self";
         return localStorage.getItem("5etools-roll-target") || "everyone";
     });
+    const [rollAdvantage, setRollAdvantage] = useState<Advantage>(() => {
+        const saved = localStorage.getItem("5etools-roll-adv");
+        return saved === "adv" || saved === "dis" ? saved : "normal";
+    });
+    const [critArmed, setCritArmed] = useState(false);
+    const rollControls: RollControls = { advantage: rollAdvantage, critArmed, setCritArmed };
 
     useEffect(() => {
         let pingInterval: any;
@@ -668,7 +727,7 @@ export default function ViewPopover() {
         if (rollEngine === 'basic') {
             setIsInitiativeRolling(true);
             try {
-                const result = rollInitiativeBasic(monster);
+                const result = rollInitiativeBasic(monster, undefined, undefined, rollAdvantage);
                 const finalTotal = initiativeTiebreakTotal(result.total, mod);
                 const shownText = finalTotal === result.total
                     ? result.formattedText
@@ -698,7 +757,7 @@ export default function ViewPopover() {
         // Hoisted for the finally block (stands the safety net down on every exit).
         let rid = "";
         try {
-            const notation = initiativeNotation(mod, monsterName);
+            const notation = initiativeNotation(mod, monsterName, rollAdvantage);
             const player = await OBR.player.getName();
             const playerId = await OBR.player.getId();
             const ts = Date.now();
@@ -763,7 +822,7 @@ export default function ViewPopover() {
             if (dicePlusTotal !== null) {
                 finalTotal = initiativeTiebreakTotal(dicePlusTotal, mod);
             } else {
-                fallbackResult = rollInitiativeBasic(monster);
+                fallbackResult = rollInitiativeBasic(monster, undefined, undefined, rollAdvantage);
                 finalTotal = initiativeTiebreakTotal(fallbackResult.total, mod);
                 isFallback = true;
             }
@@ -835,6 +894,11 @@ export default function ViewPopover() {
         }
     };
 
+    const handleRollAdvantageChange = (advantage: Advantage) => {
+        setRollAdvantage(advantage);
+        localStorage.setItem("5etools-roll-adv", advantage);
+    };
+
     if (error) {
         return (
             <div style={{ padding: "16px", color: "#800", background: "#fee", border: "1px solid #fcc", borderRadius: "8px" }}>
@@ -868,12 +932,13 @@ export default function ViewPopover() {
                     {i > 0 && ", "}
                     {k.toUpperCase()}{" "}
                     <RollButton 
-                        segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k.toUpperCase()} Save` }} 
+                        segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k.toUpperCase()} Save`, kind: 'save' }}
                         active={activeDice} 
                         rollTarget={rollTarget}
                         rollEngine={rollEngine}
                         isRolling={isRolling}
                         setIsRolling={setIsRolling}
+                        rollControls={rollControls}
                     />
                 </span>
             ))}
@@ -887,12 +952,13 @@ export default function ViewPopover() {
                     {i > 0 && ", "}
                     {k.charAt(0).toUpperCase() + k.slice(1)}{" "}
                     <RollButton 
-                        segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k} Check` }} 
+                        segment={{ type: 'roll', content: String(v), formula: `1d20${v}`, label: `${k} Check`, kind: 'check' }}
                         active={activeDice} 
                         rollTarget={rollTarget}
                         rollEngine={rollEngine}
                         isRolling={isRolling}
                         setIsRolling={setIsRolling}
+                        rollControls={rollControls}
                     />
                 </span>
             ))}
@@ -980,7 +1046,7 @@ export default function ViewPopover() {
             <MetadataLine label="Hit Points" value={hpText} />
             <MetadataLine label="Speed" value={speedText} />
 
-            <AbilityTable monster={monster} active={activeDice} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} />
+            <AbilityTable monster={monster} active={activeDice} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} rollControls={rollControls} />
 
             {/* Secondary stats */}
             <div style={{ marginBottom: "8px" }}>
@@ -1002,18 +1068,18 @@ export default function ViewPopover() {
             {/* Traits */}
             {monster.trait && (
                 <div style={{ marginBottom: "12px" }}>
-                    {renderEntries(monster.trait, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                    {renderEntries(monster.trait, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                 </div>
             )}
 
             {/* Spellcasting (within traits) */}
-            {monster.spellcasting && renderSpellcasting(monster.spellcasting, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+            {monster.spellcasting && renderSpellcasting(monster.spellcasting, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
 
             {/* Actions */}
             {monster.action && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Actions" />
-                    {renderEntries(monster.action, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                    {renderEntries(monster.action, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                 </div>
             )}
 
@@ -1021,7 +1087,7 @@ export default function ViewPopover() {
             {monster.bonus && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Bonus Actions" />
-                    {renderEntries(monster.bonus, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                    {renderEntries(monster.bonus, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                 </div>
             )}
 
@@ -1029,7 +1095,7 @@ export default function ViewPopover() {
             {monster.reaction && (
                 <div style={{ marginBottom: "12px" }}>
                     <SectionHeader title="Reactions" />
-                    {renderEntries(monster.reaction, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                    {renderEntries(monster.reaction, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                 </div>
             )}
 
@@ -1042,7 +1108,7 @@ export default function ViewPopover() {
                             {legendaryPreamble}
                         </p>
                     )}
-                    {renderEntries(monster.legendary, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                    {renderEntries(monster.legendary, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                 </div>
             )}
 
@@ -1052,10 +1118,10 @@ export default function ViewPopover() {
                     <SectionHeader title="Mythic Actions" />
                     {monster.mythicHeader && (
                         <p style={{ fontStyle: "italic", fontSize: "13px", marginBottom: "8px" }}>
-                            {renderEntries(monster.mythicHeader, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                            {renderEntries(monster.mythicHeader, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                         </p>
                     )}
-                    {renderEntries(monster.mythic, activeDice, rollTarget, rollEngine, isRolling, setIsRolling)}
+                    {renderEntries(monster.mythic, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
                 </div>
             )}
 
@@ -1140,6 +1206,53 @@ export default function ViewPopover() {
                     }} />
                     <span style={{ flex: 1, textAlign: "center", fontSize: "10px", zIndex: 1, color: rollEngine === 'dice-plus' ? "white" : "#666", lineHeight: "18px", transition: "color 0.2s" }}>Dice+</span>
                     <span style={{ flex: 1, textAlign: "center", fontSize: "10px", zIndex: 1, color: rollEngine === 'basic' ? "white" : "#666", lineHeight: "18px", transition: "color 0.2s" }}>Basic</span>
+                </div>
+            </div>
+
+            {/* Combat Rolls */}
+            <div style={{ marginTop: "8px", padding: "8px 12px", background: "rgba(88, 24, 13, 0.05)", borderRadius: "8px", display: "flex", flexDirection: "column", gap: "8px", border: critArmed ? "1px solid #b41414" : "1px solid #e0d0b0" }}>
+                <style>{`@keyframes critPulse { 0% { box-shadow: 0 0 0 0 rgba(180, 20, 20, 0.6); } 70% { box-shadow: 0 0 0 6px rgba(180, 20, 20, 0); } 100% { box-shadow: 0 0 0 0 rgba(180, 20, 20, 0); } }`}</style>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "12px", fontWeight: "bold", color: "#58180D" }}>d20 roll:</span>
+                    <div style={{ display: "flex", background: "#ddd", borderRadius: "15px", padding: "2px" }} title="Applies to attack rolls, checks, saves, DC checks, and initiative">
+                        {([['normal', 'Normal'], ['adv', 'Adv'], ['dis', 'Dis']] as const).map(([value, label]) => (
+                            <button
+                                key={value}
+                                onClick={() => handleRollAdvantageChange(value)}
+                                style={{
+                                    border: "none",
+                                    borderRadius: "13px",
+                                    padding: "3px 8px",
+                                    background: rollAdvantage === value ? "#58180D" : "transparent",
+                                    color: rollAdvantage === value ? "white" : "#666",
+                                    cursor: "pointer",
+                                    fontSize: "10px",
+                                }}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "12px", fontWeight: "bold", color: critArmed ? "#b41414" : "#58180D" }}>Critical:</span>
+                    <button
+                        onClick={() => setCritArmed(!critArmed)}
+                        title="Double damage dice. A natural 20 on an attack arms this automatically; consumed after your next damage roll."
+                        style={{
+                            border: critArmed ? "1px solid #b41414" : "none",
+                            borderRadius: "13px",
+                            padding: "3px 12px",
+                            background: critArmed ? "#b41414" : "#ddd",
+                            color: critArmed ? "white" : "#666",
+                            cursor: "pointer",
+                            fontSize: "10px",
+                            fontWeight: critArmed ? "bold" : "normal",
+                            animation: critArmed ? "critPulse 1s infinite" : "none",
+                        }}
+                    >
+                        {critArmed ? "💥 Crit ×2" : "Crit off"}
+                    </button>
                 </div>
             </div>
 

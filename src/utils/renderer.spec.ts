@@ -39,6 +39,7 @@ describe('renderer.ts - render5eToolsText', () => {
             expect(segments[0].content).toBe('8');
             expect(segments[0].formula).toBe('8');
             expect(segments[0].label).toBe('Roll');
+            expect(segments[0].kind).toBe('damage');
         });
 
         it('should parse {@damage 2d6+3} tag', () => {
@@ -57,6 +58,13 @@ describe('renderer.ts - render5eToolsText', () => {
             expect(segments[0].content).toBe('4d6');
             expect(segments[0].formula).toBe('4d6');
             expect(segments[0].label).toBe('Roll');
+        });
+
+        it('marks dice and scaledice roll segments as damage', () => {
+            for (const tag of ['{@dice 1d6+2}', '{@scaledice 2d6|1d6}']) {
+                const roll = render5etoolsText(tag).find(segment => segment.type === 'roll');
+                expect(roll?.kind).toBe('damage');
+            }
         });
 
         it('should parse {@atk mw} tag', () => {
@@ -78,6 +86,7 @@ describe('renderer.ts - render5eToolsText', () => {
             expect(rollResult?.content).toBe('+14');
             expect(rollResult?.formula).toBe('1d20+14');
             expect(rollResult?.label).toBe('Attack Roll');
+            expect(rollResult?.kind).toBe('attack');
         });
 
         it('should parse {@hit -5} tag (negative hit bonus)', () => {
@@ -104,6 +113,7 @@ describe('renderer.ts - render5eToolsText', () => {
             expect(textResult).toContain('DC 14');
             expect(rollResult?.formula).toBe('1d20');
             expect(rollResult?.label).toBe('DC 14 Check');
+            expect(rollResult?.kind).toBe('dc');
         });
 
         it('should parse {@sav str} tag', () => {
@@ -125,6 +135,7 @@ describe('renderer.ts - render5eToolsText', () => {
             const roll = result.find(s => s.type === 'roll');
             expect(roll?.content).toBe('(Recharge 5\u20136)');
             expect(roll?.formula).toBe('1d6');
+            expect(roll?.kind).toBe('recharge');
         });
 
         it('should parse {@recharge} tag (no value)', () => {
