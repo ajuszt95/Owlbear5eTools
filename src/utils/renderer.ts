@@ -1,6 +1,8 @@
+export type RollKind = 'attack' | 'damage' | 'check' | 'save' | 'dc' | 'recharge' | 'other';
+
 export type RenderSegment =
     | { type: 'text'; content: string }
-    | { type: 'roll'; content: string; formula: string; label: string };
+    | { type: 'roll'; content: string; formula: string; label: string; kind?: RollKind };
 
 /**
  * Renders 5e.tools markup into an array of segments (text or rollable).
@@ -48,7 +50,8 @@ export function render5etoolsText(text: string): RenderSegment[] {
                     type: 'roll', 
                     content: display, 
                     formula: `1d20${display}`, 
-                    label: "Attack Roll" 
+                    label: "Attack Roll",
+                    kind: 'attack',
                 });
                 break;
             }
@@ -59,7 +62,8 @@ export function render5etoolsText(text: string): RenderSegment[] {
                     type: 'roll', 
                     content: rawValue, 
                     formula: "1d20", 
-                    label: `DC ${rawValue} Check` 
+                    label: `DC ${rawValue} Check`,
+                    kind: 'dc',
                 });
                 break;
 
@@ -84,7 +88,8 @@ export function render5etoolsText(text: string): RenderSegment[] {
                     type: 'roll', 
                     content: rechargeDisplay, 
                     formula: "1d6", 
-                    label: "Recharge" 
+                    label: "Recharge",
+                    kind: 'recharge',
                 });
                 break;
 
@@ -96,7 +101,8 @@ export function render5etoolsText(text: string): RenderSegment[] {
                     type: 'roll', 
                     content: rawValue, 
                     formula: rawValue, 
-                    label: "Roll" 
+                    label: "Roll",
+                    kind: 'damage',
                 });
                 break;
 
@@ -105,7 +111,7 @@ export function render5etoolsText(text: string): RenderSegment[] {
             case "actsavesuccessfail": segments.push({ type: 'text', content: "Failure or Success:" }); break;
             case "actsavefailby": segments.push({ type: 'text', content: "Failure by 5 or more:" }); break;
             case "miss": segments.push({ type: 'text', content: "Miss:" }); break;
-            case "d20": segments.push({ type: 'roll', content: rawValue, formula: "1d20", label: "d20" }); break;
+            case "d20": segments.push({ type: 'roll', content: rawValue, formula: "1d20", label: "d20", kind: 'other' }); break;
 
             default:
                 segments.push({ type: 'text', content: rawValue || "" });

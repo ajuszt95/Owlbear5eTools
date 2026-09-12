@@ -93,6 +93,18 @@ describe('initiative.ts', () => {
         it('falls back to bare # Initiative when name sanitizes to empty', () => {
             expect(initiativeNotation(0, '')).toBe('1d20+0 # Initiative');
         });
+
+        it('emits keep-highest notation for advantage', () => {
+            expect(initiativeNotation(2, 'Goblin', 'adv')).toBe('2d20kh1+2 # Initiative Goblin');
+        });
+
+        it('emits keep-lowest notation for disadvantage', () => {
+            expect(initiativeNotation(2, 'Goblin', 'dis')).toBe('2d20kl1+2 # Initiative Goblin');
+        });
+
+        it('keeps the explicit +0 under advantage', () => {
+            expect(initiativeNotation(0, 'Goblin', 'adv')).toBe('2d20kh1+0 # Initiative Goblin');
+        });
     });
 
     describe('initiativeTiebreakTotal', () => {
@@ -139,6 +151,24 @@ describe('initiative.ts', () => {
                 () => 7
             );
             expect(result.formattedText.startsWith('Initiative \u2014 Giant Squid (CR 9):')).toBe(true);
+        });
+
+        it('honors advantage, keeping the higher d20', () => {
+            const rolls = [14, 7];
+            let index = 0;
+            const result = rollInitiativeBasic({ dex: 14, name: 'Goblin' }, undefined, () => rolls[index++], 'adv');
+            expect(result.total).toBe(16);
+            expect(result.advantage).toBe('adv');
+            expect(result.formattedText).toContain('14, 7 (2d20, adv)');
+        });
+
+        it('honors disadvantage, keeping the lower d20', () => {
+            const rolls = [14, 7];
+            let index = 0;
+            const result = rollInitiativeBasic({ dex: 14, name: 'Goblin' }, undefined, () => rolls[index++], 'dis');
+            expect(result.total).toBe(9);
+            expect(result.advantage).toBe('dis');
+            expect(result.keptRolls).toEqual([7]);
         });
     });
 

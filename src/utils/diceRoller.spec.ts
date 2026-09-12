@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateRoll, parseDiceFormula, type RollResult } from './diceRoller';
+import { applyAdvantageNotation, critFormula, evaluateRoll, keptD20FromDicePlus, parseDiceFormula, type RollResult } from './diceRoller';
 
 describe('diceRoller.ts', () => {
     describe('parseDiceFormula', () => {
@@ -80,6 +80,62 @@ describe('diceRoller.ts', () => {
     });
 
     describe('evaluateRoll', () => {
+        it('keeps the higher d20 for advantage and formats both dice', () => {
+            const rolls = [14, 7];
+            let index = 0;
+            const result = evaluateRoll('1d20+7', {
+                advantage: 'adv',
+                roller: () => rolls[index++],
+            });
+
+            expect(result.total).toBe(21);
+            expect(result.diceRolls).toEqual([{ sides: 20, rolls: [14, 7] }]);
+            expect(result.keptRolls).toEqual([14]);
+            expect(result.advantage).toBe('adv');
+            expect(result.formattedText).toBe('Result of the roll: 14, 7 (2d20, adv) + 7 = 21');
+        });
+
+        it('keeps the lower d20 for disadvantage and judges natural results from it', () => {
+            const rolls = [20, 1];
+            let index = 0;
+            const result = evaluateRoll('1d20+5', {
+                advantage: 'dis',
+                roller: () => rolls[index++],
+            });
+
+            expect(result.total).toBe(6);
+            expect(result.keptRolls).toEqual([1]);
+            expect(result.isNat1).toBe(true);
+            expect(result.isNat20).toBe(false);
+            expect(result.variant).toBe('ERROR');
+        });
+
+        it('detects a natural 20 when advantage keeps it', () => {
+            const rolls = [20, 1];
+            let index = 0;
+            const result = evaluateRoll('1d20+4', {
+                advantage: 'adv',
+                roller: () => rolls[index++],
+            });
+
+            expect(result.total).toBe(24);
+            expect(result.isNat20).toBe(true);
+            expect(result.variant).toBe('SUCCESS');
+        });
+
+        it('does not apply advantage to damage or multi-die formulas', () => {
+            const rolls = [3, 4, 5];
+            let index = 0;
+            const result = evaluateRoll('2d6+1', {
+                advantage: 'adv',
+                roller: () => rolls[index++],
+            });
+
+            expect(result.total).toBe(8);
+            expect(result.diceRolls).toEqual([{ sides: 6, rolls: [3, 4] }]);
+            expect(result.advantage).toBe('normal');
+        });
+
         it('should roll 1d20+3 and format result as requested', () => {
             // Mock roller to return 14
             const result: RollResult = evaluateRoll('1d20+3', {
@@ -244,6 +300,59 @@ describe('diceRoller.ts', () => {
                 expect(result.total).toBeLessThanOrEqual(24);
                 expect(['DEFAULT', 'SUCCESS', 'ERROR']).toContain(result.variant);
             }
+        });
+    });
+
+    describe('roll notation transforms', () => {
+        it('creates Dice+ keep notation only for standalone d20 formulas', () => {
+            expect(applyAdvantageNotation('1d20+5', 'adv')).toBe('2d20kh1+5');
+            expect(applyAdvantageNotation('d20 - 2', 'dis')).toBe('2d20kl1-2');
+            expect(applyAdvantageNotation('2d8+5', 'adv')).toBe('2d8+5');
+            expect(applyAdvantageNotation('1d20+5', 'normal')).toBe('1d20+5');
+        });
+
+        it('doubles each damage dice group but not modifiers or flat values', () => {
+            expect(critFormula('2d8+5')).toBe('4d8+5');
+            expect(critFormula('1d8+1d4+2')).toBe('2d8+2d4+2');
+            expect(critFormula('d6')).toBe('2d6');
+            expect(critFormula('10')).toBe('10');
+            expect(critFormula('nonsense')).toBe('nonsense');
+        });
+    });
+
+    describe('keptD20FromDicePlus', () => {
+        const d20 = (value: number, kept = true) => ({ diceId: 'd', rollId: 'r', diceType: 'd20', value, kept });
+
+        it('reads the kept d20 from a normal 1d20 result', () => {
+            const payload = { rollId: 'roll_1', result: { groups: [{ diceType: 'd20', dice: [d20(20)], total: 20 }] } };
+            expect(keptD20FromDicePlus(payload)).toBe(20);
+        });
+
+        it('reads the kept die from advantage (2d20kh1), not the dropped one', () => {
+            const payload = {
+                rollId: 'roll_2',
+                result: { groups: [{ diceType: 'd20', dice: [d20(20, true), d20(7, false)], total: 20 }] },
+            };
+            expect(keptD20FromDicePlus(payload)).toBe(20);
+        });
+
+        it('reads the kept die from disadvantage (2d20kl1)', () => {
+            const payload = {
+                rollId: 'roll_3',
+                result: { groups: [{ diceType: 'd20', dice: [d20(20, false), d20(1, true)], total: 1 }] },
+            };
+            expect(keptD20FromDicePlus(payload)).toBe(1);
+        });
+
+        it('unwraps the broadcast event envelope', () => {
+            const payload = { rollId: 'roll_4', result: { groups: [{ diceType: 'd20', dice: [d20(12)], total: 12 }] } };
+            expect(keptD20FromDicePlus({ data: payload })).toBe(12);
+        });
+
+        it('returns null when no d20 group is present', () => {
+            expect(keptD20FromDicePlus({ rollId: 'x', result: { groups: [{ diceType: 'd6', dice: [{ diceType: 'd6', value: 4, kept: true }], total: 4 }] } })).toBeNull();
+            expect(keptD20FromDicePlus({ rollId: 'y', result: { groups: [] } })).toBeNull();
+            expect(keptD20FromDicePlus(null)).toBeNull();
         });
     });
 });

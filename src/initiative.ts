@@ -1,6 +1,6 @@
 import OBR from "@owlbear-rodeo/sdk";
 import { INITIATIVE_METADATA_KEY } from "./Background";
-import { evaluateRoll, type RollResult } from "./utils/diceRoller";
+import { applyAdvantageNotation, evaluateRoll, type Advantage, type RollResult } from "./utils/diceRoller";
 
 /**
  * Standard D&D ability modifier: floor((score - 10) / 2).
@@ -39,9 +39,9 @@ export function sanitizeDicePlusLabel(name: string): string {
  * notation in the result display; "1d20+0 # Label" renders cleanly like the
  * +X cases (verified live 2026-09-03).
  */
-export function initiativeNotation(mod: number, monsterName: string): string {
+export function initiativeNotation(mod: number, monsterName: string, advantage: Advantage = "normal"): string {
     const modStr = mod >= 0 ? `+${mod}` : `${mod}`;
-    const base = `1d20${modStr}`;
+    const base = applyAdvantageNotation(`1d20${modStr}`, advantage);
     const clean = sanitizeDicePlusLabel(monsterName || "");
     if (!clean) return `${base} # Initiative`;
     return `${base} # Initiative ${clean}`;
@@ -72,14 +72,15 @@ export function initiativeTiebreakTotal(total: number, mod: number): number {
 export function rollInitiativeBasic(
     monster: InitiativeMonster,
     label?: string,
-    roller?: (sides: number) => number
+    roller?: (sides: number) => number,
+    advantage: Advantage = "normal"
 ): RollResult {
     const mod = dexModifier(monster.dex);
     const modStr = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : "";
     const formula = `1d20${modStr}`;
     const displayName = monster._displayName || monster.name || "creature";
     const rollLabel = label ?? `Initiative \u2014 ${displayName}`;
-    return evaluateRoll(formula, { label: rollLabel, roller });
+    return evaluateRoll(formula, { label: rollLabel, roller, advantage });
 }
 
 export interface WriteInitiativeResult {
