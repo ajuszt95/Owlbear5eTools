@@ -3,7 +3,7 @@ import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID, INITIATIVE_METADATA_KEY } from "./Background";
 import { render5etoolsText, render5etoolsPlainText, type RenderSegment } from "./utils/renderer";
 import { critFormula, evaluateRoll, type Advantage } from "./utils/diceRoller";
-import { buildTurnNotation, getAttackDamageSegment, mapTurnGroups, resolveRoutine, sendSingleRoll, sendTurnRequest, type RollSegment, type TurnResult } from "./routines";
+import { buildTurnNotation, formatRollDetail, getAttackDamageSegment, mapTurnGroups, resolveRoutine, sendSingleRoll, sendTurnRequest, type RollSegment, type TurnResult } from "./routines";
 import { dexModifier, initiativeNotation, initiativeTiebreakTotal, rollInitiativeBasic, writeInitiative } from "./initiative";
 import { APP_VERSION } from "./version";
 
@@ -972,6 +972,7 @@ export default function ViewPopover() {
                             label,
                             notation: part.notation,
                             total: result.total,
+                            detail: formatRollDetail(result.keptRolls, result.modifier),
                             nat20,
                             ok: true,
                         };
@@ -1227,7 +1228,7 @@ export default function ViewPopover() {
                             {turnLines.map((line, i) => (
                                 <div key={i} style={{ color: line.ok ? "#333" : "#800" }}>
                                     {line.label} {line.notation}
-                                    {line.total !== undefined ? ` → ${line.total}` : ""}
+                                    {line.total !== undefined ? ` → ${line.detail ? `${line.detail} = ` : ""}${line.total}` : ""}
                                     {line.nat20 ? " — Nat 20!" : ""}
                                     {!line.ok ? " FAILED" : ""}
                                     {line.nat20 && line.extra && (

@@ -3,6 +3,7 @@ import OBR from '@owlbear-rodeo/sdk';
 import {
     buildTurnNotation,
     critExtraFormula,
+    formatRollDetail,
     getAttackDamageFormula,
     getAttackHitFormula,
     mapTurnGroups,
@@ -286,6 +287,16 @@ describe('routines.ts', () => {
         });
     });
 
+    describe('formatRollDetail', () => {
+        it('renders Dice+-summary style breakdowns', () => {
+            expect(formatRollDetail([12], 7)).toBe('[12] + 7');
+            expect(formatRollDetail([4, 5], 5)).toBe('[4, 5] + 5');
+            expect(formatRollDetail([9], -2)).toBe('[9] - 2');
+            expect(formatRollDetail([9], 0)).toBe('[9]');
+            expect(formatRollDetail([], 7)).toBeUndefined();
+        });
+    });
+
     describe('mapTurnGroups', () => {
         const d20Group = (value: number) => ({
             diceType: 'd20',
@@ -308,8 +319,8 @@ describe('routines.ts', () => {
             );
             const mapped = mapTurnGroups(built!.parts, [d20Group(20), dmgGroup(12)]);
             expect(mapped).toEqual([
-                { label: 'Beak attack', notation: '1d20+7', total: 20, nat20: true, ok: true, extra: '1d10' },
-                { label: 'Beak damage', notation: '1d10+5', total: 12, nat20: false, ok: true, extra: undefined },
+                { label: 'Beak attack', notation: '1d20+7', total: 20, detail: '[20] + 7', nat20: true, ok: true, extra: '1d10' },
+                { label: 'Beak damage', notation: '1d10+5', total: 12, detail: '[12] + 5', nat20: false, ok: true, extra: undefined },
             ]);
         });
 

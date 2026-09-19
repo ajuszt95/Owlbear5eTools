@@ -545,11 +545,36 @@ export type TurnResult = {
     label: string;
     notation: string;
     total?: number;
+    /** Kept-dice breakdown, Dice+-summary style ("[12] + 7", "[4, 5] + 5"). */
+    detail?: string;
     nat20: boolean;
     ok: boolean;
     /** Crit extra dice for a Nat20 attack ("1d10") — non-blocking follow-up. */
     extra?: string;
 };
+
+/**
+ * Breakdown string from kept die values + modifier. Mirrors the Dice+
+ * rollSummary shape so Basic and Dice+ lines read identically.
+ */
+export function formatRollDetail(
+    keptValues: number[],
+    modifier: number
+): string | undefined {
+    const rolls = keptValues.filter((v) => typeof v === "number");
+    if (rolls.length === 0) return undefined;
+    const dice = `[${rolls.join(", ")}]`;
+    if (!modifier) return dice;
+    return modifier > 0 ? `${dice} + ${modifier}` : `${dice} - ${Math.abs(modifier)}`;
+}
+
+/** Numeric values of the dice Dice+ kept for a group total. */
+function keptGroupValues(g: DicePlusGroup): number[] {
+    if (!Array.isArray(g.dice)) return [];
+    return g.dice
+        .filter((d) => d && d.kept !== false && typeof d.value === "number")
+        .map((d) => d.value as number);
+}
 
 /**
  * Map Dice+ result groups back to turn parts by position (Dice+ returns
@@ -569,6 +594,9 @@ export function mapTurnGroups(
         const total = typeof g.total === "number" ? g.total : undefined;
         const nat20 =
             part.kinds === "attack" && keptD20FromDicePlus([g]) === 20;
+        // Breakdown from OUR formula (modifier split) + Dice+ kept dice.
+        const modifier = parseDiceFormula(part.formula).modifier;
+        const detail = formatRollDetail(keptGroupValues(g), modifier);
         const repSuffix =
             parts.filter((p) => p.attack === part.attack && p.kinds === part.kinds)
                 .length > 1
@@ -589,6 +617,7 @@ export function mapTurnGroups(
             label: `${part.attack}${repSuffix} ${part.kinds}`,
             notation: part.notation,
             total,
+            detail,
             nat20,
             ok: total !== undefined,
             extra,
