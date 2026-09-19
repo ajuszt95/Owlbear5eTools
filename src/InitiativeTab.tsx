@@ -86,14 +86,14 @@ export default function InitiativeTab({ active }: { active: boolean }) {
         }
     };
 
-    // Refresh on first tab open (same action as the Refresh button): the
-    // scene usually changed since the panel mounted (tokens spawned after
-    // opening). First-open only — later re-opens must never wipe a run in
-    // progress or a finished outcome report; the button covers those.
-    const autoRefreshed = useRef(false);
+    // Refresh on every tab open (same action as the Refresh button): the
+    // scene normally changed while the tab was hidden (tokens spawned after
+    // opening). The one exception is a run in flight — reopening mid-run
+    // must preserve progress, never reset it.
+    const runningRef = useRef(false);
+    runningRef.current = running;
     useEffect(() => {
-        if (active && !autoRefreshed.current) {
-            autoRefreshed.current = true;
+        if (active && !runningRef.current) {
             void refresh();
         }
     }, [active]);
