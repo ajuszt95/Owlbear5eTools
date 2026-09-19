@@ -5,8 +5,11 @@ import { METADATA_KEY, BUBBLES_METADATA_KEY } from "./Background";
 /**
  * Shared token-building core: sizes via DPI (never .scale()), centers in
  * the viewport, and writes both monster + Stat Bubbles metadata at once.
+ *
+ * Takes an already-fetched monster so callers that probed the token image
+ * (or picked from search) don't re-fetch the same book JSON.
  */
-async function addMonsterToken(monster: Monster, itemWidth: number, itemHeight: number) {
+export async function spawnMonsterFromData(monster: Monster, itemWidth: number, itemHeight: number) {
     const hp = extractHP(monster);
     const ac = extractAC(monster);
     const { multiplier } = getMonsterDimensions(monster.size);
@@ -69,7 +72,7 @@ async function addMonsterToken(monster: Monster, itemWidth: number, itemHeight: 
  */
 export async function spawnMonster(url: string, itemWidth: number, itemHeight: number) {
     const monster = await fetchMonsterData(url);
-    await addMonsterToken(monster, itemWidth, itemHeight);
+    await spawnMonsterFromData(monster, itemWidth, itemHeight);
 }
 
 /**
@@ -78,5 +81,5 @@ export async function spawnMonster(url: string, itemWidth: number, itemHeight: n
  */
 export async function spawnMonsterByIdentity(name: string, source: string, itemWidth: number, itemHeight: number) {
     const monster = await fetchMonsterByIdentity(name, source);
-    await addMonsterToken(monster, itemWidth, itemHeight);
+    await spawnMonsterFromData(monster, itemWidth, itemHeight);
 }
