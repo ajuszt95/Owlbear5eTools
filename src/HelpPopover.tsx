@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { fetchMonsterData, fetchMonsterByIdentity } from "./api";
-import { spawnMonsterFromData } from "./spawning";
+import { spawnMonstersFromData, MAX_SPAWN_COUNT } from "./spawning";
 import MonsterSearchInput from "./MonsterSearchInput";
 import type { MonsterIndexEntry } from "./monsterIndex";
 import { formatMonsterEntrySubtitle } from "./monsterIndex";
@@ -12,7 +12,9 @@ export default function HelpPopover() {
     const [selectedEntry, setSelectedEntry] = useState<MonsterIndexEntry | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
-    const [success, setSuccess] = useState(false);
+    const [success, setSuccess] = useState("");
+    const [spawnCount, setSpawnCount] = useState(1);
+    const [countNote, setCountNote] = useState("");
     const [role, setRole] = useState<string | null>(null);
 
     useEffect(() => {
@@ -22,35 +24,60 @@ export default function HelpPopover() {
         });
     }, []);
 
+    const bumpCount = (delta: number) => {
+        setCountNote("");
+        setSpawnCount((c) => {
+            const next = Math.min(MAX_SPAWN_COUNT, Math.max(1, c + delta));
+            if (delta > 0 && next === MAX_SPAWN_COUNT && c === MAX_SPAWN_COUNT) {
+                setCountNote(`Maximum ${MAX_SPAWN_COUNT} tokens per spawn.`);
+            }
+            return next;
+        });
+    };
+
     const handleSpawn = async () => {
         setLoading(true);
         setError("");
-        setSuccess(false);
+        setSuccess("");
+        setCountNote("");
         const trimUrl = spawnUrl.trim();
         const picked = selectedEntry;
+        const count = Math.min(MAX_SPAWN_COUNT, Math.max(1, spawnCount));
         try {
             const monster = picked
                 ? await fetchMonsterByIdentity(picked.n, picked.s)
                 : await fetchMonsterData(trimUrl);
             const tokenUrl = monster.tokenUrl || "https://5e.tools/img/token/blank.png";
 
-            // Pre-fetch image dimensions for accurate DPI calculation in OBR
-            const img = new Image();
-            img.src = tokenUrl;
+            // Pre-fetch image dimensions for accurate DPI calculation in OBR.
+            // On probe failure fall back to 300x300 and still spawn.
+            let actualWidth = 300;
+            let actualHeight = 300;
+            let probeFailed = false;
+            try {
+                const img = new Image();
+                img.src = tokenUrl;
 
-            await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = () => reject(new Error("Failed to load token image dimensions."));
-                // Timeout after 5s
-                setTimeout(() => reject(new Error("Image dimension fetch timed out.")), 5000);
-            });
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = () => reject(new Error("Failed to load token image dimensions."));
+                    // Timeout after 5s
+                    setTimeout(() => reject(new Error("Image dimension fetch timed out.")), 5000);
+                });
 
-            const actualWidth = img.naturalWidth || 300;
-            const actualHeight = img.naturalHeight || 300;
+                actualWidth = img.naturalWidth || 300;
+                actualHeight = img.naturalHeight || 300;
+            } catch {
+                probeFailed = true;
+            }
 
             // Reuse the already-fetched monster: no second book-JSON fetch.
-            await spawnMonsterFromData(monster, actualWidth, actualHeight);
-            setSuccess(true);
+            const ids = await spawnMonstersFromData(monster, actualWidth, actualHeight, count, "row");
+            if (probeFailed) {
+                setError("Token image couldn't be probed - spawned at fallback size.");
+            } else {
+                setSuccess(ids.length === 1 ? "Token spawned!" : `Spawned ${ids.length} tokens!`);
+            }
             setSpawnUrl(""); // clear input
             setSelectedEntry(null);
         } catch (err: any) {
@@ -149,7 +176,7 @@ export default function HelpPopover() {
                             setSelectedEntry(entry);
                             setSpawnUrl("");
                             setError("");
-                            setSuccess(false);
+                            setSuccess("");
                         }}
                     />
                     {selectedEntry && (
@@ -158,7 +185,36 @@ export default function HelpPopover() {
                                 <strong style={{ color: "#58180D" }}>{selectedEntry.n}</strong>
                                 <span style={{ color: "#666" }}> · {formatMonsterEntrySubtitle(selectedEntry)}</span>
                             </span>
+                    <div>
+                        <label style={{ fontSize: "12px", fontWeight: 600, color: "#58180D", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                            Copies (1–{MAX_SPAWN_COUNT})
+                        </label>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                             <button
+                                onClick={() => bumpCount(-1)}
+                                disabled={loading || spawnCount <= 1}
+                                aria-label="Fewer copies"
+                                style={{ width: "32px", height: "32px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: 700, lineHeight: 1, background: (loading || spawnCount <= 1) ? "#eee" : "white", color: "#58180D", border: "1px solid #ccc", borderRadius: "8px", cursor: (loading || spawnCount <= 1) ? "not-allowed" : "pointer" }}
+                            >
+                                −
+                            </button>
+                            <span style={{ minWidth: "28px", textAlign: "center", fontSize: "16px", fontWeight: 700, color: "#58180D" }}>
+                                {spawnCount}
+                            </span>
+                            <button
+                                onClick={() => bumpCount(1)}
+                                disabled={loading || spawnCount >= MAX_SPAWN_COUNT}
+                                aria-label="More copies"
+                                style={{ width: "32px", height: "32px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: 700, lineHeight: 1, background: (loading || spawnCount >= MAX_SPAWN_COUNT) ? "#eee" : "white", color: "#58180D", border: "1px solid #ccc", borderRadius: "8px", cursor: (loading || spawnCount >= MAX_SPAWN_COUNT) ? "not-allowed" : "pointer" }}
+                            >
+                                +
+                            </button>
+                        </div>
+                    </div>
+                    {countNote && (
+                        <div style={{ fontSize: "12px", color: "#666", fontStyle: "italic" }}>{countNote}</div>
+                    )}
+                    <button
                                 onClick={() => setSelectedEntry(null)}
                                 style={{ padding: "2px 8px", fontSize: "12px", background: "transparent", color: "#58180D", border: "1px solid #58180D", borderRadius: "6px", cursor: "pointer" }}
                             >
@@ -200,7 +256,7 @@ export default function HelpPopover() {
                             transition: "all 0.2s"
                         }}
                     >
-                        {loading ? "Spawning…" : "Spawn Token"}
+                        {loading ? "Spawning…" : spawnCount === 1 ? "Spawn Token" : `Spawn ${spawnCount} Tokens`}
                     </button>
                 </div>
 
@@ -214,7 +270,7 @@ export default function HelpPopover() {
                 )}
                 {success && (
                     <div style={{ marginTop: "12px", color: "#060", fontSize: "12px", padding: "8px", background: "#f0fff0", borderRadius: "6px", border: "1px solid #cfc" }}>
-                        Token spawned!
+                        {success}
                     </div>
                 )}
             </section>
