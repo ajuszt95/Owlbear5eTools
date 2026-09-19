@@ -19,7 +19,9 @@ export interface BulkToken {
 
 /**
  * Pure filter: every scene item whose metadata carries a monster stat block.
- * Display name prefers the (possibly scaled) monster name, then the item name.
+ * Display name is the on-map item name (e.g. multi-spawn's "Goblin 1..N",
+ * or a custom name kept by import) — that is what the DM sees on the map
+ * and in the tracker. Falls back to the monster's own name fields.
  */
 export function collectMonsterTokens(items: Item[]): BulkToken[] {
     const out: BulkToken[] = [];
@@ -28,7 +30,7 @@ export function collectMonsterTokens(items: Item[]): BulkToken[] {
         if (!monster || typeof monster !== "object") continue;
         out.push({
             id: item.id,
-            name: monster._displayName || monster.name || item.name,
+            name: item.name || monster._displayName || monster.name,
             monster,
         });
     }

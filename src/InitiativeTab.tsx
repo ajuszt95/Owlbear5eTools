@@ -122,7 +122,9 @@ export default function InitiativeTab({ active }: { active: boolean }) {
         setProgress({ done: 0, total: tokens.length });
         try {
             const existing = await readExistingCounts(tokens.map((t) => t.id));
-            setCounts(existing);
+            // Merge, never replace: the run only re-reads checked tokens, and
+            // replacing would wipe the displayed state of unchecked rows.
+            setCounts((prev) => new Map([...prev, ...existing]));
             if (overwrite) {
                 const occupied = tokens.filter((t) => existing.get(t.id) !== undefined).length;
                 if (occupied > 0) {
@@ -149,7 +151,8 @@ export default function InitiativeTab({ active }: { active: boolean }) {
             if (skipped > 0) summary += ` ${skipped} skipped.`;
             if (failed > 0) summary += ` ${failed} failed.`;
             await OBR.notification.show(summary, failed > 0 ? "ERROR" : "DEFAULT");
-            setCounts(await readExistingCounts(tokens.map((t) => t.id)));
+            const post = await readExistingCounts(tokens.map((t) => t.id));
+            setCounts((prev) => new Map([...prev, ...post]));
         } catch (err: unknown) {
             setError(`Bulk roll failed: ${describeError(err)}`);
         } finally {
@@ -188,9 +191,11 @@ export default function InitiativeTab({ active }: { active: boolean }) {
                     <label style={{ fontSize: "12px", fontWeight: 600, color: "#58180D", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
                         Scope
                     </label>
-                    <div style={pillTrack} title="Selection read unavailable in this SDK — All only">
-                        <button disabled style={pillButton(true)}>All monster tokens</button>
-                        <button disabled style={pillButton(false, true)}>Selected tokens</button>
+                    <div style={{ fontSize: "13px", color: "#333", padding: "3px 0" }}>
+                        All monster tokens on scene
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#999", fontStyle: "italic" }}>
+                        The SDK exposes no selection read — uncheck tokens below to exclude them.
                     </div>
                 </div>
                 <div>

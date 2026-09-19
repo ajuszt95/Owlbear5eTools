@@ -69,8 +69,8 @@ describe('bulkInitiative.ts', () => {
             ];
             const out = collectMonsterTokens(items as never);
             expect(out.map((t) => t.id)).toEqual(['t1', 't4']);
-            expect(out[0].name).toBe('Goblin');
-            expect(out[1].name).toBe('Ogre (buffed)');
+            expect(out[0].name).toBe('Goblin 1');
+            expect(out[1].name).toBe('Ogre');
         });
 
         it('falls back to the item name when the monster is nameless', () => {
