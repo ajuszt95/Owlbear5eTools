@@ -2,7 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID, INITIATIVE_METADATA_KEY } from "./Background";
 import { render5etoolsText, render5etoolsPlainText, type RenderSegment } from "./utils/renderer";
-import { applyAdvantageNotation, critFormula, evaluateRoll, keptD20FromDicePlus, type Advantage } from "./utils/diceRoller";
+import { critFormula, type Advantage } from "./utils/diceRoller";
+import { executeRoutine, getAttackDamageSegment, resolveRoutine, sendSingleRoll, type RollSegment, type RoutineLogEntry } from "./routines";
 import { dexModifier, initiativeNotation, initiativeTiebreakTotal, rollInitiativeBasic, writeInitiative } from "./initiative";
 import { APP_VERSION } from "./version";
 
@@ -185,7 +186,18 @@ type RollControls = {
     setCritArmed: (armed: boolean) => void;
 };
 
-const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsRolling, rollControls }: {
+/**
+ * Hit-to-damage chaining plumbing (Actions section only). The named-action
+ * branch sets `scope` so a manual attack roll can offer its damage as a
+ * one-click follow-up; `renderChainRow` draws that row under its action.
+ */
+type ChainPlumbing = {
+    onAttackRolled: (attackName: string, damage: RollSegment) => void;
+    scope?: { attackName: string; damage: RollSegment };
+    renderChainRow?: (attackName: string) => React.ReactNode;
+};
+
+const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chainScope, onAttackRolled }: {
     segment: Extract<RenderSegment, { type: 'roll' }>;
     active: boolean;
     rollTarget: string;
@@ -193,6 +205,8 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
     isRolling: boolean;
     setIsRolling: (v: boolean) => void;
     rollControls: RollControls;
+    chainScope?: { attackName: string; damage: RollSegment };
+    onAttackRolled?: (attackName: string, damage: RollSegment) => void;
 }) => {
     // Per-button debounce — prevents accidental double-clicks on the same button.
     const lastRollTime = useRef(0);
@@ -207,85 +221,18 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
         if (now - lastRollTime.current < 500) return;
         lastRollTime.current = now;
 
-        const isDamage = segment.kind === 'damage';
-        const rollFormula = isDamage && rollControls.critArmed ? critFormula(segment.formula) : segment.formula;
-        const advantage = segment.kind === 'attack' || segment.kind === 'check' || segment.kind === 'save' || segment.kind === 'dc'
-            ? rollControls.advantage
-            : 'normal';
-
-        if (rollEngine === 'basic') {
-            try {
-                const result = evaluateRoll(rollFormula, { label: segment.label, advantage });
-                const critMessage = result.isNat20 && segment.kind === 'attack' ? "\nCrit armed for your next damage roll." : "";
-                if (result.isNat20 && segment.kind === 'attack') rollControls.setCritArmed(true);
-                if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
-                await OBR.notification.show(`${result.formattedText}${critMessage}`, result.variant);
-                console.log("[RollButton] Basic roll executed:", result);
-            } catch (err) {
-                console.error("[RollButton] ERROR during basic roll:", err);
-                await OBR.notification.show(`Failed to roll ${segment.formula}`, "ERROR");
-            }
-            return;
-        }
-
-        // Dice+ mode
-        setIsRolling(true);
-        // Safety — auto-unlock after 10 s in case Dice+ never responds.
-        const safetyTimer = setTimeout(() => setIsRolling(false), 10_000);
-
-        try {
-            const player = await OBR.player.getName();
-            const playerId = await OBR.player.getId();
-            const ts = Date.now();
-            const rid = "roll_" + ts + "_" + Math.random().toString(36).substring(7);
-
-            const payload = {
-                rollId: rid,
-                playerId: playerId,
-                playerName: player,
-                rollTarget: rollTarget,
-                diceNotation: isDamage && rollControls.critArmed
-                    ? critFormula(segment.formula)
-                    : applyAdvantageNotation(segment.formula, advantage),
-                showResults: true,
-                timestamp: ts,
-                source: EXTENSION_ID,
-            };
-
-            // Attack rolls: watch for the Dice+ result to auto-arm crit on Nat20.
-            // Dice+ reports kept/dropped dice in result.groups — the kept d20
-            // decides (mirrors Basic's kept-die rule). Best-effort: if the
-            // popover closes mid-roll this listener dies with it and the user
-            // can still arm manually.
-            let unsubCrit: (() => void) | undefined;
-            let critTimer: ReturnType<typeof setTimeout> | undefined;
-            if (segment.kind === 'attack') {
-                const myRid = rid;
-                const cleanupCritWatch = () => {
-                    try { unsubCrit?.(); } catch { /* noop */ }
-                    if (critTimer) clearTimeout(critTimer);
-                };
-                critTimer = setTimeout(cleanupCritWatch, 30_000);
-                unsubCrit = OBR.broadcast.onMessage(`${EXTENSION_ID}/roll-result`, (event: unknown) => {
-                    const wrapper = event as { data?: unknown } | undefined;
-                    const p = (wrapper?.data ?? event) as any;
-                    if (p?.rollId !== myRid) return;
-                    cleanupCritWatch();
-                    if (keptD20FromDicePlus(p) === 20) {
-                        rollControls.setCritArmed(true);
-                        OBR.notification.show("Nat 20! Crit armed for your next damage roll.", "SUCCESS").catch(() => { /* noop */ });
-                    }
-                });
-            }
-
-            await OBR.broadcast.sendMessage("dice-plus/roll-request", payload, { destination: 'ALL' });
-            // Consume crit like Basic does — otherwise Dice+ stays armed forever.
-            if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
-            console.log("[RollButton] Roll request sent to Dice+:", rid, payload.diceNotation);
-        } catch (err) {
-            console.error("[RollButton] ERROR during Dice+ roll:", err);
-            clearTimeout(safetyTimer);
-            setIsRolling(false);
+        // Shared sender — singles and the routine runner use this same path.
+        const outcome = await sendSingleRoll(segment, {
+            rollTarget,
+            rollEngine,
+            advantage: rollControls.advantage,
+            critArmed: rollControls.critArmed,
+            setCritArmed: rollControls.setCritArmed,
+            setIsRolling,
+        });
+        console.log("[RollButton] Roll executed:", outcome);
+        if (outcome.ok && segment.kind === 'attack' && chainScope && onAttackRolled) {
+            onAttackRolled(chainScope.attackName, chainScope.damage);
         }
     };
 
@@ -320,16 +267,16 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
     );
 };
 
-const renderMarkup = (text: string, active: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls) => {
+const renderMarkup = (text: string, active: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, chain?: ChainPlumbing) => {
     const segments = render5etoolsText(text);
     return segments.map((s, i) => (
         <span key={i}>
-            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} rollControls={rollControls} />}
+            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} rollControls={rollControls} chainScope={chain?.scope} onAttackRolled={chain?.onAttackRolled} />}
         </span>
     ));
 };
 
-const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, depth = 0): React.ReactNode => {
+const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, depth = 0, chain?: ChainPlumbing): React.ReactNode => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
         if (e == null) return null;
@@ -338,7 +285,7 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         if (typeof e === "string") {
             return (
                 <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>
-                    {renderMarkup(e, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                    {renderMarkup(e, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}
                 </p>
             );
         }
@@ -349,10 +296,20 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
 
         // Named entry with entries[] (most common for traits/actions)
         if (type === "entries" || (!type && e.name && e.entries)) {
+            // Actions-section chaining: scope manual attack rolls to this
+            // action's damage so singles offer a one-click damage follow-up.
+            const plainName = typeof e.name === "string" ? render5etoolsPlainText(e.name) : "";
+            const damageSeg = chain && plainName ? getAttackDamageSegment({ entries: e.entries }) : null;
+            const childChain = chain
+                ? damageSeg
+                    ? { ...chain, scope: { attackName: plainName, damage: damageSeg } }
+                    : { ...chain, scope: undefined }
+                : undefined;
             return (
                 <div key={i} style={{ marginBottom: "6px" }}>
-                    <strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}. </strong>
-                    {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth)}
+                    <strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}. </strong>
+                    {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth, childChain)}
+                    {chain?.renderChainRow?.(plainName)}
                 </div>
             );
         }
@@ -362,20 +319,20 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
             if (e.name && e.entry) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}.</strong></em>{" "}
-                        {renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}.</strong></em>{" "}
+                        {renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}
                     </div>
                 );
             }
             if (e.name && e.entries) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}.</strong></em>{" "}
-                        {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}.</strong></em>{" "}
+                        {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth, chain)}
                     </div>
                 );
             }
-            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</p>;
+            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}</p>;
         }
 
         // List
@@ -386,7 +343,7 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                 <ul key={i} style={{ margin: "4px 0", paddingLeft: isHangNotitle ? "0" : "18px", listStyle: isHangNotitle ? "none" : "disc" }}>
                     {items.map((it: any, j: number) => (
                         <li key={j} style={{ marginBottom: "3px" }}>
-                            {renderEntries([it], activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1)}
+                            {renderEntries([it], activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1, chain)}
                         </li>
                     ))}
                 </ul>
@@ -406,10 +363,10 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                 }}>
                     {e.name && (
                         <div style={{ fontWeight: "bold", color: "#58180D", marginBottom: "4px" }}>
-                            {renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                            {renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}
                         </div>
                     )}
-                    {e.entries && renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1)}
+                    {e.entries && renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1, chain)}
                 </div>
             );
         }
@@ -421,14 +378,14 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
             const rows: any[][] = e.rows || [];
             return (
                 <div key={i} style={{ margin: "8px 0", overflowX: "auto" }}>
-                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
+                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}</div>}
                     <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>
                         {colLabels.length > 0 && (
                             <thead>
                                 <tr>
                                     {colLabels.map((col: string, j: number) => (
                                         <th key={j} style={{ border: "1px solid #ccc", padding: "3px 6px", background: "#e8d5b7", textAlign: "left" }}>
-                                             {renderMarkup(col, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                                             {renderMarkup(col, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}
                                         </th>
                                     ))}
                                 </tr>
@@ -440,9 +397,9 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                                     {row.map((cell: any, k: number) => (
                                         <td key={k} style={{ border: "1px solid #ccc", padding: "3px 6px" }}>
                                             {typeof cell === "string"
-                                                ? renderMarkup(cell, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)
+                                                ? renderMarkup(cell, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)
                                                 : typeof cell === "object" && cell?.type === "cell"
-                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)
+                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)
                                                     : String(cell ?? "")}
                                         </td>
                                     ))}
@@ -456,7 +413,7 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
 
         // Fallback — try to render entries/entry if present
         if (e.entries) return renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth);
-        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</p>;
+        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, chain)}</p>;
 
         return null;
     });
@@ -585,11 +542,36 @@ const MetadataLine = ({ label, value }: { label: string; value: any }) => {
     );
 };
 
-const SectionHeader = ({ title }: { title: string }) => (
-    <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
-        {title}
-    </h3>
-);
+/** One routine-log row: "Beak attack 1d20+7 → 19", "Claw damage 2d6+8 → abc123 (crit)", skips, failures. */
+const formatRoutineLogLine = (entry: RoutineLogEntry): string => {
+    if (entry.note && entry.note.startsWith("skipped")) return `${entry.label}: ${entry.note}`;
+    const result = entry.total !== undefined
+        ? ` → ${entry.total}`
+        : entry.rollId
+            ? ` → ${entry.rollId}`
+            : "";
+    const note = entry.note ? ` (${entry.note})` : "";
+    const status = entry.ok ? "" : " FAILED";
+    return `${entry.label} ${entry.notation ?? entry.formula ?? ""}${result}${note}${status}`;
+};
+
+const SectionHeader = ({ title, action }: { title: string; action?: React.ReactNode }) => {    // No action: byte-identical to the original header.
+    if (!action) {
+        return (
+            <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
+                {title}
+            </h3>
+        );
+    }
+    return (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", borderBottom: "1px solid #58180D", margin: "16px 0 8px" }}>
+            <h3 style={{ color: "#58180D", fontSize: "18px", margin: 0 }}>
+                {title}
+            </h3>
+            {action}
+        </div>
+    );
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Main Component
@@ -616,7 +598,18 @@ export default function ViewPopover() {
         return saved === "adv" || saved === "dis" ? saved : "normal";
     });
     const [critArmed, setCritArmed] = useState(false);
-    const rollControls: RollControls = { advantage: rollAdvantage, critArmed, setCritArmed };
+    // Mirror for the routine runner: steps read the live flag per send
+    // (React state in a loop closure would go stale after arming).
+    const critArmedRef = useRef(false);
+    const setCritArmedSynced = (armed: boolean) => {
+        critArmedRef.current = armed;
+        setCritArmed(armed);
+    };
+    const rollControls: RollControls = { advantage: rollAdvantage, critArmed, setCritArmed: setCritArmedSynced };
+    const [routineRunning, setRoutineRunning] = useState(false);
+    const [routineLog, setRoutineLog] = useState<RoutineLogEntry[]>([]);
+    const [chainedDamage, setChainedDamage] = useState<{ attack: string; damage: RollSegment; key: number } | null>(null);
+    const chainTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     useEffect(() => {
         let pingInterval: any;
@@ -899,6 +892,91 @@ export default function ViewPopover() {
         localStorage.setItem("5etools-roll-adv", advantage);
     };
 
+    // ── Attack routines (#15) ─────────────────────────────────────────────
+    // Resolve once per monster: null when there is no (resolvable) Multiattack.
+    const routine = monster?.action && (rollEngine === 'basic' || isDiceReady || forceDice)
+        ? resolveRoutine(monster.action)
+        : null;
+
+    const clearChainRow = () => {
+        if (chainTimer.current) {
+            clearTimeout(chainTimer.current);
+            chainTimer.current = undefined;
+        }
+        setChainedDamage(null);
+    };
+
+    const handleAttackRolled = (attackName: string, damage: RollSegment) => {
+        if (chainTimer.current) clearTimeout(chainTimer.current);
+        const key = Date.now();
+        setChainedDamage({ attack: attackName, damage, key });
+        // Alive ~30 s, then the row dismisses itself.
+        chainTimer.current = setTimeout(() => {
+            setChainedDamage((prev) => (prev && prev.key === key ? null : prev));
+        }, 30_000);
+    };
+
+    const renderChainRow = (attackName: string) => {
+        if (!chainedDamage || chainedDamage.attack !== attackName) return null;
+        return (
+            <div key={`chain-${chainedDamage.key}`} style={{ margin: "2px 0 6px 12px", fontSize: "12px" }}>
+                <span style={{ color: "#999" }}>→ Roll {attackName} damage: </span>
+                <RollButton
+                    segment={chainedDamage.damage}
+                    active={activeDice}
+                    rollTarget={rollTarget}
+                    rollEngine={rollEngine}
+                    isRolling={isRolling || routineRunning}
+                    setIsRolling={setIsRolling}
+                    rollControls={rollControls}
+                />
+            </div>
+        );
+    };
+
+    // Actions-section plumbing: manual attack rolls offer damage follow-ups.
+    // (activeDice is declared below; this line evaluates eagerly, so inline it.)
+    const chainPlumbing: ChainPlumbing | undefined =
+        (rollEngine === 'basic' || isDiceReady || forceDice)
+            ? { onAttackRolled: handleAttackRolled, renderChainRow }
+            : undefined;
+
+    const runRoutine = async () => {
+        if (!routine || routineRunning || isRolling || isInitiativeRolling) return;
+        clearChainRow();
+        setRoutineLog([]);
+        setRoutineRunning(true);
+        try {
+            const summary = await executeRoutine(routine.steps, routine.skipped, {
+                lookupAction: (name) => (monster.action as unknown[]).find(
+                    (a) => a && typeof a === "object" && (a as { name?: unknown }).name === name
+                ),
+                send: (segment, opts) => sendSingleRoll(segment, {
+                    rollTarget,
+                    rollEngine,
+                    advantage: rollAdvantage,
+                    critArmed: critArmedRef.current,
+                    setCritArmed: setCritArmedSynced,
+                    setIsRolling,
+                    silent: true,
+                    awaitDiceResult: opts.awaitDiceResult,
+                }),
+                log: (entry) => setRoutineLog((prev) => [...prev, entry]),
+            });
+            // At most one error toast per routine; details live in the log.
+            if (summary.failed > 0) {
+                await OBR.notification.show(
+                    `Routine finished with ${summary.failed} failed step${summary.failed === 1 ? "" : "s"} — see log.`,
+                    "ERROR"
+                );
+            }
+        } finally {
+            setRoutineRunning(false);
+        }
+    };
+
+    const routineBlocked = routineRunning || isRolling || isInitiativeRolling;
+
     if (error) {
         return (
             <div style={{ padding: "16px", color: "#800", background: "#fee", border: "1px solid #fcc", borderRadius: "8px" }}>
@@ -1078,8 +1156,38 @@ export default function ViewPopover() {
             {/* Actions */}
             {monster.action && (
                 <div style={{ marginBottom: "12px" }}>
-                    <SectionHeader title="Actions" />
-                    {renderEntries(monster.action, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                    <SectionHeader title="Actions" action={routine && routine.totalRolls > 0 ? (
+                        <button
+                            onClick={runRoutine}
+                            disabled={routineBlocked}
+                            title={routineBlocked ? "Roll in progress…" : `Run ${routine.steps.map((s) => `${s.attack} x${s.count}`).join(", ")} in order`}
+                            style={{
+                                padding: "3px 10px",
+                                cursor: routineBlocked ? "not-allowed" : "pointer",
+                                background: routineBlocked ? "#ccc" : "#58180D",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                opacity: routineBlocked ? 0.7 : 1,
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            {routineRunning ? "Running…" : `Run routine (${routine.totalRolls} rolls)`}
+                        </button>
+                    ) : undefined} />
+                    {routineLog.length > 0 && (
+                        <div style={{ border: "1px solid #e0d0b0", borderRadius: "4px", background: "#ffffff", padding: "6px 8px", marginBottom: "8px", maxHeight: "120px", overflowY: "auto", fontSize: "12px" }}>
+                            <div style={{ color: "#999", fontSize: "11px", marginBottom: "4px" }}>Routine log — sequential, no hit/miss adjudication.</div>
+                            {routineLog.map((entry, i) => (
+                                <div key={i} style={{ color: entry.ok ? "#333" : "#800" }}>
+                                    {formatRoutineLogLine(entry)}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {renderEntries(monster.action, activeDice, rollTarget, rollEngine, isRolling || routineRunning, setIsRolling, rollControls, 0, chainPlumbing)}
                 </div>
             )}
 
