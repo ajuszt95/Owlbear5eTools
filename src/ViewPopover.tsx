@@ -993,6 +993,7 @@ export default function ViewPopover() {
                     return;
                 }
                 const mapped = mapTurnGroups(built.parts, outcome.groups);
+                console.log("[Turn] Dice+ groups:", JSON.stringify(outcome.groups));
                 if (!mapped) {
                     // Dice+ grouped unexpectedly — the popup still shows every
                     // die; say so instead of mislabeling.
