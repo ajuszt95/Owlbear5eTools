@@ -47,6 +47,9 @@ export function initiativeNotation(mod: number, monsterName: string, advantage: 
     return `${base} # Initiative ${clean}`;
 }
 
+/** How long a Dice+ initiative broadcast waits for its matched rollId before falling back to a local roll. */
+export const DICE_PLUS_RESULT_TIMEOUT_MS = 10_000;
+
 /** Minimal monster shape needed for initiative (avoids importing full Monster type). */
 export interface InitiativeMonster {
     dex?: number;

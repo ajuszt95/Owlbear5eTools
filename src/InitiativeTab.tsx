@@ -65,12 +65,15 @@ export default function InitiativeTab({ active }: { active: boolean }) {
     const [checked, setChecked] = useState<Set<string>>(new Set());
     const [overwrite, setOverwrite] = useState(false);
     const [running, setRunning] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
     const [rows, setRows] = useState<BulkRow[]>([]);
     const [error, setError] = useState("");
     const [loaded, setLoaded] = useState(false);
 
     const refresh = async () => {
+        if (refreshing) return;
+        setRefreshing(true);
         setError("");
         try {
             const items = await OBR.scene.items.getItems();
@@ -83,6 +86,8 @@ export default function InitiativeTab({ active }: { active: boolean }) {
             setLoaded(true);
         } catch (err: unknown) {
             setError(`Failed to read scene tokens: ${describeError(err)}`);
+        } finally {
+            setRefreshing(false);
         }
     };
 
@@ -91,11 +96,16 @@ export default function InitiativeTab({ active }: { active: boolean }) {
     // opening). The one exception is a run in flight — reopening mid-run
     // must preserve progress, never reset it.
     const runningRef = useRef(false);
-    runningRef.current = running;
+    useEffect(() => {
+        runningRef.current = running;
+    });
     useEffect(() => {
         if (active && !runningRef.current) {
             void refresh();
         }
+        // refresh intentionally excluded: its identity changes every render,
+        // and this effect must fire on tab activation only, not on re-render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [active]);
 
     const toggleCheck = (id: string) => {
@@ -176,10 +186,10 @@ export default function InitiativeTab({ active }: { active: boolean }) {
                 <h3 style={{ color: "#58180D", fontSize: "18px", fontWeight: 700, margin: 0 }}>Encounter Initiative</h3>
                 <button
                     onClick={refresh}
-                    disabled={running}
-                    style={{ padding: "4px 10px", fontSize: "12px", background: "transparent", color: "#58180D", border: "1px solid #58180D", borderRadius: "6px", cursor: running ? "not-allowed" : "pointer" }}
+                    disabled={running || refreshing}
+                    style={{ padding: "4px 10px", fontSize: "12px", background: "transparent", color: "#58180D", border: "1px solid #58180D", borderRadius: "6px", cursor: (running || refreshing) ? "not-allowed" : "pointer" }}
                 >
-                    Refresh
+                    {refreshing ? "Refreshing…" : "Refresh"}
                 </button>
             </div>
             <p style={{ fontSize: "13px", color: "#666", marginBottom: "16px" }}>
@@ -282,7 +292,7 @@ export default function InitiativeTab({ active }: { active: boolean }) {
                     transition: "all 0.2s"
                 }}
             >
-                {running ? "Rolling…" : checkedCount === 0 ? "Nothing selected" : `Roll initiative (${checkedCount})`}
+                {running ? "Rolling…" : candidates.length === 0 ? "No tokens" : checkedCount === 0 ? "Nothing selected" : `Roll initiative (${checkedCount})`}
             </button>
 
             {error && (

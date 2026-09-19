@@ -122,6 +122,8 @@ describe('bulkInitiative.ts', () => {
             });
             expect(rows).toHaveLength(2);
             expect(rows.every((r) => r.status === 'written')).toBe(true);
+            // Basic rolls are local by definition — no (local) marker noise.
+            expect(rows.every((r) => r.local === undefined)).toBe(true);
             expect(mockedUpdateItems).toHaveBeenCalledTimes(2);
             for (const call of mockedUpdateItems.mock.calls) {
                 expect(call[0]).toHaveLength(1);
@@ -231,7 +233,7 @@ describe('bulkInitiative.ts', () => {
             );
 
             const requestPayload = mockedSendMessage.mock.calls[1][1] as Record<string, unknown>;
-            expect(requestPayload.diceNotation).toBe('1d20+2 # Initiative Goblin');
+            expect(requestPayload.diceNotation).toBe('1d20+2 # Initiative Goblin 1');
             expect(requestPayload.rollTarget).toBe('everyone');
         });
 
@@ -261,6 +263,20 @@ describe('bulkInitiative.ts', () => {
             expect(requests).toHaveLength(2);
             expect(requests[0][1].rollId).not.toBe(requests[1][1].rollId);
             expect(String(requests[0][1].rollId).startsWith('init_')).toBe(true);
+        });
+
+        it('settles the safety net even when the write throws after a good roll', async () => {
+            answerDicePlus(15);
+            mockedUpdateItems.mockRejectedValueOnce(new Error('scene locked'));
+            const rows = await runBulkInitiative({
+                tokens: [goblinToken('a')],
+                overwrite: false,
+                existing: new Map([['a', undefined]]),
+                ctx: { engine: 'dice-plus', rollTarget: 'everyone', advantage: 'normal', interRollGapMs: 0 },
+            });
+            expect(rows[0]).toMatchObject({ status: 'failed' });
+            const channels = mockedSendMessage.mock.calls.map((c) => c[0]);
+            expect(channels.filter((c) => String(c).includes('initiative-settled'))).toHaveLength(1);
         });
 
         it('settles the safety net even when the broadcast throws', async () => {

@@ -2,6 +2,7 @@ import OBR, { type Item } from "@owlbear-rodeo/sdk";
 import { EXTENSION_ID, INITIATIVE_METADATA_KEY, METADATA_KEY } from "./Background";
 import type { Monster } from "./api";
 import {
+    DICE_PLUS_RESULT_TIMEOUT_MS,
     dexModifier,
     initiativeNotation,
     initiativeTiebreakTotal,
@@ -48,7 +49,7 @@ export function eligibleForRun(candidates: BulkToken[], checkedIds: Set<string>)
 
 /** Presence check only (any shape) — lair fetching itself is issue #8's job. */
 export function hasLair(token: BulkToken): boolean {
-    const lg = (token.monster as { legendaryGroup?: unknown }).legendaryGroup;
+    const lg = token.monster.legendaryGroup;
     return lg !== undefined && lg !== null;
 }
 
@@ -110,14 +111,17 @@ export interface SingleRollOutcome {
  */
 export async function rollOneToken(token: BulkToken, ctx: BulkRollContext): Promise<SingleRollOutcome> {
     const mod = dexModifier(token.monster.dex);
-    const monsterName = token.monster._displayName || token.monster.name || token.name;
+    // On-map token name first ("Goblin 1") so sequential Dice+ popups for
+    // numbered siblings stay distinguishable (sanitized inside the notation
+    // builder, same as single rolls).
+    const monsterName = token.name || token.monster._displayName || token.monster.name;
 
     if (ctx.engine === "basic") {
         const result = rollInitiativeBasic(token.monster, undefined, undefined, ctx.advantage);
         return { total: initiativeTiebreakTotal(result.total, mod), local: true, rid: "" };
     }
 
-    const timeoutMs = ctx.dicePlusTimeoutMs ?? 10_000;
+    const timeoutMs = ctx.dicePlusTimeoutMs ?? DICE_PLUS_RESULT_TIMEOUT_MS;
     let rid = "";
     try {
         const notation = initiativeNotation(mod, monsterName, ctx.advantage);
@@ -239,7 +243,9 @@ export async function runBulkInitiative(opts: {
                     status: "written",
                     total: outcome.total,
                     previous: written.previous,
-                    local: outcome.local || undefined,
+                    // The (local) marker flags Dice+ fallbacks only — Basic rolls
+                    // are local by definition, so marking them would be noise.
+                    local: outcome.local && opts.ctx.engine === "dice-plus" ? true : undefined,
                     lair,
                 });
             } finally {
