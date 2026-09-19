@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import {
     collectMonsterTokens,
@@ -10,6 +10,17 @@ import {
     type BulkToken,
 } from "./bulkInitiative";
 import type { Advantage } from "./utils/diceRoller";
+
+/** The OBR SDK sometimes rejects with plain objects — serialize those too. */
+function describeError(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    try {
+        const json = JSON.stringify(err);
+        return json === undefined ? String(err) : json;
+    } catch {
+        return String(err);
+    }
+}
 
 function readRollContext(): { engine: "dice-plus" | "basic"; rollTarget: string; advantage: Advantage } {
     const engine = localStorage.getItem("5etools-roll-engine") === "basic" ? "basic" : "dice-plus";
@@ -48,7 +59,7 @@ function pillButton(active: boolean, disabled = false): React.CSSProperties {
  * Always mounted (parent hides via display:none) so a mid-run tab switch
  * never kills the await loop.
  */
-export default function InitiativeTab() {
+export default function InitiativeTab({ active }: { active: boolean }) {
     const [candidates, setCandidates] = useState<BulkToken[]>([]);
     const [counts, setCounts] = useState<Map<string, string | undefined>>(new Map());
     const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -71,15 +82,21 @@ export default function InitiativeTab() {
             setProgress(null);
             setLoaded(true);
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            setError(`Failed to read scene tokens: ${msg}`);
+            setError(`Failed to read scene tokens: ${describeError(err)}`);
         }
     };
 
-    // Load once on mount (parent only renders after OBR is ready).
+    // Refresh on first tab open (same action as the Refresh button): the
+    // scene usually changed since the panel mounted (tokens spawned after
+    // opening). First-open only — later re-opens must never wipe a run in
+    // progress or a finished outcome report; the button covers those.
+    const autoRefreshed = useRef(false);
     useEffect(() => {
-        void refresh();
-    }, []);
+        if (active && !autoRefreshed.current) {
+            autoRefreshed.current = true;
+            void refresh();
+        }
+    }, [active]);
 
     const toggleCheck = (id: string) => {
         setChecked((prev) => {
@@ -134,8 +151,7 @@ export default function InitiativeTab() {
             await OBR.notification.show(summary, failed > 0 ? "ERROR" : "DEFAULT");
             setCounts(await readExistingCounts(tokens.map((t) => t.id)));
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            setError(`Bulk roll failed: ${msg}`);
+            setError(`Bulk roll failed: ${describeError(err)}`);
         } finally {
             setRunning(false);
             setProgress(null);

@@ -336,7 +336,7 @@ export default function HelpPopover() {
             </div>
 
             <div style={{ display: activeTab === "initiative" ? "block" : "none" }}>
-                <InitiativeTab />
+                <InitiativeTab active={activeTab === "initiative"} />
             </div>
 
             <footer style={{
