@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { fetchMonsterData, fetchMonsterByIdentity } from "./api";
-import { spawnMonster, spawnMonsterByIdentity } from "./spawning";
+import { spawnMonsterFromData } from "./spawning";
 import MonsterSearchInput from "./MonsterSearchInput";
 import type { MonsterIndexEntry } from "./monsterIndex";
 import { formatMonsterEntrySubtitle } from "./monsterIndex";
@@ -48,11 +48,8 @@ export default function HelpPopover() {
             const actualWidth = img.naturalWidth || 300;
             const actualHeight = img.naturalHeight || 300;
 
-            if (picked) {
-                await spawnMonsterByIdentity(picked.n, picked.s, actualWidth, actualHeight);
-            } else {
-                await spawnMonster(trimUrl, actualWidth, actualHeight);
-            }
+            // Reuse the already-fetched monster: no second book-JSON fetch.
+            await spawnMonsterFromData(monster, actualWidth, actualHeight);
             setSuccess(true);
             setSpawnUrl(""); // clear input
             setSelectedEntry(null);
@@ -137,7 +134,7 @@ export default function HelpPopover() {
                     <ul style={{ margin: "6px 0 0 0", paddingLeft: "18px", lineHeight: "1.4" }}>
                         <li>Standard: <code>bestiary.html#monster_source</code></li>
                         <li>Direct: <code>bestiary/monster-source.html</code></li>
-                        <li>Shared: <code>bestiary.html?source=BOOK&hash=...</code></li>
+                        <li>Shared: <code>bestiary.html?source=MM&hash=owlbear_mm</code></li>
                     </ul>
                 </div>
 

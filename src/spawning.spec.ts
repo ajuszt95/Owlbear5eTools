@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { spawnMonster, spawnMonsterByIdentity } from './spawning';
+import { spawnMonster, spawnMonsterByIdentity, spawnMonsterFromData } from './spawning';
 import * as api from './api';
 import OBR from '@owlbear-rodeo/sdk';
 
@@ -69,5 +69,38 @@ describe('spawning.ts - spawnMonster', () => {
 
         expect(api.fetchMonsterByIdentity).toHaveBeenCalledWith('Owlbear', 'MM');
         expect(OBR.scene.items.addItems).toHaveBeenCalledWith([{ id: 'mock-item' }]);
+    });
+
+    it('spawnMonsterFromData should build the same item without fetching', async () => {
+        const fetchSpy = vi.spyOn(api, 'fetchMonsterData');
+
+        await spawnMonsterFromData({
+            name: 'Owlbear',
+            source: 'MM',
+            hp: { average: 59 },
+            ac: [13],
+            size: ['L'],
+            tokenUrl: 'https://example.com/owlbear.webp',
+        }, 280, 280);
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(api.fetchMonsterByIdentity).not.toHaveBeenCalled();
+        expect(OBR.scene.items.addItems).toHaveBeenCalledWith([{ id: 'mock-item' }]);
+    });
+
+    it('spawnMonster should fetch exactly once then delegate', async () => {
+        const fetchSpy = vi.spyOn(api, 'fetchMonsterData').mockResolvedValueOnce({
+            name: 'Owlbear',
+            source: 'MM',
+            hp: { average: 59 },
+            ac: [13],
+            size: ['L'],
+            tokenUrl: 'https://example.com/owlbear.webp',
+        });
+
+        await spawnMonster('https://5e.tools/bestiary.html#owlbear_mm', 280, 280);
+
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(OBR.scene.items.addItems).toHaveBeenCalledTimes(1);
     });
 });

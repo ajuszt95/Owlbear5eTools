@@ -1,73 +1,68 @@
-# React + TypeScript + Vite
+# Owlbear5eTools
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+An [Owlbear Rodeo](https://www.owlbear.rodeo/) extension that brings the
+[5e.tools](https://5e.tools) bestiary to your virtual tabletop. Right-click any
+token to import a D&D 5e monster stat block from a 5e.tools URL — HP/AC sync
+automatically to the **Stat Bubbles for D&D** extension — or spawn brand-new
+monster tokens straight from a URL.
 
-Currently, two official plugins are available:
+GM-only: every entry point checks the player role and shows a restricted-access
+screen to non-GM players.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Install
 
-## React Compiler
+Add this custom extension URL in Owlbear Rodeo:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+https://ajuszt95.github.io/Owlbear5eTools/manifest.json
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Features
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- **Import** a monster stat block onto an existing token (right-click → 5e Tools),
+  from a 5e.tools URL or the built-in monster search.
+- **View** the full stat block on a token: ability scores, saves, skills,
+  actions, reactions, legendary/mythic actions, spellcasting — with clickable
+  dice rolls.
+- **Quick Spawn** new tokens from the action-bar panel, sized to the correct
+  grid footprint via DPI math (never `.scale()`, so Stat Bubbles stays happy).
+- **Stat Bubbles sync**: HP/AC write to
+  `com.owlbear-rodeo-bubbles-extension/metadata` on import and spawn.
+- **Two dice engines**: Dice+ broadcast rolls, or a local Basic roller with
+  Nat 1/20 callouts. Advantage/disadvantage + crit doubling included.
+- **Initiative bridge**: one click writes DEX-based initiative (with tiebreak
+  decimals) to the Initiative Tracker, with a safety net for interrupted rolls.
+- **CR scaling**: append `,scaled:CR` to a monster hash to scale its stats
+  (e.g. `#goblin_mm,scaled:5`).
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Development
+
+```bash
+npm install
+npm run dev       # Vite dev server
+npm run build     # tsc + vite build → dist/
+npm run lint      # ESLint check
+npm test          # vitest run
 ```
+
+Pushing to `main` auto-deploys `./dist` to GitHub Pages via
+`.github/workflows/deploy.yml`.
+
+## Versioning
+
+`package.json` is the single source of truth. Never hand-edit built version
+files — bump with:
+
+```bash
+npm run bump:patch   # or bump:minor / bump:major
+```
+
+which also runs `scripts/sync-version.mjs` to propagate the version.
+
+## Docs
+
+- `docs/overview.md` — feature overview and user flows
+- `docs/architecture.md` — routes, popovers, metadata keys
+- `docs/contributing.md` — contributor guide
+- `CLAUDE.md` — architecture + file-by-file guide for agents
+- `openspec/` — specs and change proposals
