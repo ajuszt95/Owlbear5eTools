@@ -2,8 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID, INITIATIVE_METADATA_KEY } from "./Background";
 import { render5etoolsText, render5etoolsPlainText, type RenderSegment } from "./utils/renderer";
-import { critFormula, type Advantage } from "./utils/diceRoller";
-import { executeRoutine, getAttackDamageSegment, resolveRoutine, sendSingleRoll, type RollSegment, type RoutineLogEntry } from "./routines";
+import { critFormula, evaluateRoll, type Advantage } from "./utils/diceRoller";
+import { buildTurnNotation, getAttackDamageSegment, mapTurnGroups, resolveRoutine, sendSingleRoll, sendTurnRequest, type RollSegment, type TurnResult } from "./routines";
 import { dexModifier, initiativeNotation, initiativeTiebreakTotal, rollInitiativeBasic, writeInitiative } from "./initiative";
 import { APP_VERSION } from "./version";
 
@@ -542,19 +542,6 @@ const MetadataLine = ({ label, value }: { label: string; value: any }) => {
     );
 };
 
-/** One routine-log row: "Beak attack 1d20+7 → 19", "Claw damage 2d6+8 → abc123 (crit)", skips, failures. */
-const formatRoutineLogLine = (entry: RoutineLogEntry): string => {
-    if (entry.note && entry.note.startsWith("skipped")) return `${entry.label}: ${entry.note}`;
-    const result = entry.total !== undefined
-        ? ` → ${entry.total}`
-        : entry.rollId
-            ? ` → ${entry.rollId}`
-            : "";
-    const note = entry.note ? ` (${entry.note})` : "";
-    const status = entry.ok ? "" : " FAILED";
-    return `${entry.label} ${entry.notation ?? entry.formula ?? ""}${result}${note}${status}`;
-};
-
 const SectionHeader = ({ title, action }: { title: string; action?: React.ReactNode }) => {    // No action: byte-identical to the original header.
     if (!action) {
         return (
@@ -607,7 +594,9 @@ export default function ViewPopover() {
     };
     const rollControls: RollControls = { advantage: rollAdvantage, critArmed, setCritArmed: setCritArmedSynced };
     const [routineRunning, setRoutineRunning] = useState(false);
-    const [routineLog, setRoutineLog] = useState<RoutineLogEntry[]>([]);
+    const [turnLines, setTurnLines] = useState<TurnResult[]>([]);
+    const [turnSkipped, setTurnSkipped] = useState<string[]>([]);
+    const [turnRaw, setTurnRaw] = useState<string | null>(null);
     const [chainedDamage, setChainedDamage] = useState<{ attack: string; damage: RollSegment; key: number } | null>(null);
     const chainTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -941,34 +930,83 @@ export default function ViewPopover() {
             ? { onAttackRolled: handleAttackRolled, renderChainRow }
             : undefined;
 
+    const lookupRoutineAction = (name: string) =>
+        (monster.action as unknown[]).find(
+            (a) => a && typeof a === "object" && (a as { name?: unknown }).name === name
+        );
+
+    // Preview line under the header: what one click will roll.
+    const turnPreview = routine
+        ? buildTurnNotation(routine.steps, lookupRoutineAction, rollAdvantage)
+        : null;
+
     const runRoutine = async () => {
         if (!routine || routineRunning || isRolling || isInitiativeRolling) return;
         clearChainRow();
-        setRoutineLog([]);
+        setTurnLines([]);
+        setTurnRaw(null);
+        setTurnSkipped(routine.skipped);
         setRoutineRunning(true);
         try {
-            const summary = await executeRoutine(routine.steps, routine.skipped, {
-                lookupAction: (name) => (monster.action as unknown[]).find(
-                    (a) => a && typeof a === "object" && (a as { name?: unknown }).name === name
-                ),
-                send: (segment, opts) => sendSingleRoll(segment, {
-                    rollTarget,
-                    rollEngine,
-                    advantage: rollAdvantage,
-                    critArmed: critArmedRef.current,
-                    setCritArmed: setCritArmedSynced,
-                    setIsRolling,
-                    silent: true,
-                    awaitDiceResult: opts.awaitDiceResult,
-                }),
-                log: (entry) => setRoutineLog((prev) => [...prev, entry]),
-            });
-            // At most one error toast per routine; details live in the log.
-            if (summary.failed > 0) {
-                await OBR.notification.show(
-                    `Routine finished with ${summary.failed} failed step${summary.failed === 1 ? "" : "s"} — see log.`,
-                    "ERROR"
+            const built = buildTurnNotation(routine.steps, lookupRoutineAction, rollAdvantage);
+            if (!built) {
+                setTurnSkipped([...routine.skipped, ...routine.steps.map((s) => s.attack)]);
+                return;
+            }
+            setTurnSkipped([...routine.skipped, ...built.skipped]);
+
+            // ── Basic engine: instant local eval per part, same model as singles.
+            if (rollEngine === "basic") {
+                setTurnLines(
+                    built.parts.map((part) => {
+                        const result = evaluateRoll(part.notation, { label: part.attack });
+                        const repCount = built.parts.filter(
+                            (p) => p.attack === part.attack && p.kinds === part.kinds
+                        ).length;
+                        const label = `${part.attack}${repCount > 1 ? ` ${part.rep}` : ""} ${part.kinds}`;
+                        const nat20 =
+                            part.kinds === "attack" &&
+                            result.keptRolls.length > 0 &&
+                            result.keptRolls[0] === 20;
+                        return {
+                            label,
+                            notation: part.notation,
+                            total: result.total,
+                            nat20,
+                            ok: true,
+                        };
+                    })
                 );
+                return;
+            }
+
+            // ── Dice+ engine: ONE compound request for the whole turn.
+            setIsRolling(true);
+            const safetyTimer = setTimeout(() => setIsRolling(false), 10_000);
+            try {
+                const outcome = await sendTurnRequest(built.notation, rollTarget);
+                clearTimeout(safetyTimer);
+                setIsRolling(false);
+                if (!outcome.ok) {
+                    await OBR.notification.show(`Turn failed: ${outcome.error}`, "ERROR");
+                    return;
+                }
+                const mapped = mapTurnGroups(built.parts, outcome.groups);
+                if (!mapped) {
+                    // Dice+ grouped unexpectedly — the popup still shows every
+                    // die; say so instead of mislabeling.
+                    const totals = outcome.groups
+                        .map((g) => (typeof g.total === "number" ? `${g.total}` : "?"))
+                        .join(" · ");
+                    setTurnRaw(`Dice+ grouped the turn unexpectedly (${totals}) — see the popup.`);
+                    return;
+                }
+                setTurnLines(mapped);
+            } catch (err: unknown) {
+                clearTimeout(safetyTimer);
+                setIsRolling(false);
+                const msg = err instanceof Error ? err.message : String(err);
+                await OBR.notification.show(`Turn failed: ${msg}`, "ERROR");
             }
         } finally {
             setRoutineRunning(false);
@@ -1156,11 +1194,11 @@ export default function ViewPopover() {
             {/* Actions */}
             {monster.action && (
                 <div style={{ marginBottom: "12px" }}>
-                    <SectionHeader title="Actions" action={routine && routine.totalRolls > 0 ? (
+                    <SectionHeader title="Actions" action={turnPreview ? (
                         <button
                             onClick={runRoutine}
                             disabled={routineBlocked}
-                            title={routineBlocked ? "Roll in progress…" : `Run ${routine.steps.map((s) => `${s.attack} x${s.count}`).join(", ")} in order`}
+                            title={routineBlocked ? "Roll in progress…" : `One Dice+ request: ${turnPreview.notation}`}
                             style={{
                                 padding: "3px 10px",
                                 cursor: routineBlocked ? "not-allowed" : "pointer",
@@ -1174,15 +1212,38 @@ export default function ViewPopover() {
                                 whiteSpace: "nowrap",
                             }}
                         >
-                            {routineRunning ? "Running…" : `Run routine (${routine.totalRolls} rolls)`}
+                            {routineRunning ? "Rolling…" : `Roll turn (${turnPreview.parts.length} dice)`}
                         </button>
                     ) : undefined} />
-                    {routineLog.length > 0 && (
-                        <div style={{ border: "1px solid #e0d0b0", borderRadius: "4px", background: "#ffffff", padding: "6px 8px", marginBottom: "8px", maxHeight: "120px", overflowY: "auto", fontSize: "12px" }}>
-                            <div style={{ color: "#999", fontSize: "11px", marginBottom: "4px" }}>Routine log — sequential, no hit/miss adjudication.</div>
-                            {routineLog.map((entry, i) => (
-                                <div key={i} style={{ color: entry.ok ? "#333" : "#800" }}>
-                                    {formatRoutineLogLine(entry)}
+                    {turnPreview && (
+                        <div style={{ fontSize: "11px", color: "#999", fontStyle: "italic", marginBottom: "6px" }}>
+                            Turn: {routine!.steps.map((s) => `${s.attack} ×${s.count}`).join(" · ")}
+                            {turnSkipped.length > 0 && ` (skips ${turnSkipped.join(", ")})`}
+                        </div>
+                    )}
+                    {(turnLines.length > 0 || turnRaw) && (
+                        <div style={{ border: "1px solid #e0d0b0", borderRadius: "4px", background: "#ffffff", padding: "6px 8px", marginBottom: "8px", maxHeight: "140px", overflowY: "auto", fontSize: "12px" }}>
+                            {turnRaw && <div style={{ color: "#800" }}>{turnRaw}</div>}
+                            {turnLines.map((line, i) => (
+                                <div key={i} style={{ color: line.ok ? "#333" : "#800" }}>
+                                    {line.label} {line.notation}
+                                    {line.total !== undefined ? ` → ${line.total}` : ""}
+                                    {line.nat20 ? " — Nat 20!" : ""}
+                                    {!line.ok ? " FAILED" : ""}
+                                    {line.nat20 && line.extra && (
+                                        <>
+                                            {" "}
+                                            <RollButton
+                                                segment={{ type: 'roll', content: line.extra, formula: line.extra, label: `${line.label} crit`, kind: 'damage' }}
+                                                active={activeDice}
+                                                rollTarget={rollTarget}
+                                                rollEngine={rollEngine}
+                                                isRolling={isRolling || routineRunning}
+                                                setIsRolling={setIsRolling}
+                                                rollControls={rollControls}
+                                            />
+                                        </>
+                                    )}
                                 </div>
                             ))}
                         </div>

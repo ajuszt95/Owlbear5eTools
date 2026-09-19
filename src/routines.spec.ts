@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import OBR from '@owlbear-rodeo/sdk';
 import {
-    executeRoutine,
+    buildTurnNotation,
+    critExtraFormula,
     getAttackDamageFormula,
     getAttackHitFormula,
+    mapTurnGroups,
     matchAttackName,
     parseMultiattack,
     resolveRoutine,
     sendSingleRoll,
+    sendTurnRequest,
     type RollSegment,
-    type RoutineStep,
     type SendContext,
 } from './routines';
 
@@ -216,10 +218,128 @@ describe('routines.ts', () => {
         });
     });
 
-    describe('sendSingleRoll (Dice+) + executeRoutine delegation', () => {
-        // Auto-answer every new roll-request with a kept d20 (the sender's
-        // rid guard ignores stale handlers, mirroring bulkInitiative.spec).
-        function autoAnswerDicePlus(value: number): () => void {
+    describe('buildTurnNotation (one turn, one request)', () => {
+        const byName = (actions: { name: string; entries: string[] }[]) =>
+            new Map(actions.map((a) => [a.name, a]));
+
+        it('Owlbear compacts to attack+damage per sub-attack in order', () => {
+            const built = buildTurnNotation(
+                [
+                    { attack: 'Beak', count: 1 },
+                    { attack: 'Claws', count: 1 },
+                ],
+                byName(OWLBEAR_ACTIONS).get.bind(byName(OWLBEAR_ACTIONS)),
+                'normal'
+            );
+            expect(built?.notation).toBe('1d20+7+1d10+5+1d20+7+2d8+5');
+            expect(built?.parts.map((p) => `${p.attack} ${p.kinds}`)).toEqual([
+                'Beak attack',
+                'Beak damage',
+                'Claws attack',
+                'Claws damage',
+            ]);
+            expect(built?.skipped).toEqual([]);
+        });
+
+        it('Dragon with adv: attacks gain 2d20kh1, damage stays plain', () => {
+            const built = buildTurnNotation(
+                [
+                    { attack: 'Bite', count: 1 },
+                    { attack: 'Claw', count: 2 },
+                ],
+                byName(DRAGON_ACTIONS).get.bind(byName(DRAGON_ACTIONS)),
+                'adv'
+            );
+            expect(built?.parts).toHaveLength(6);
+            expect(built?.notation).toBe(
+                '2d20kh1+14+2d10+8+2d20kh1+14+2d6+8+2d20kh1+14+2d6+8'
+            );
+        });
+
+        it('skips steps with no attack roll; null when nothing remains', () => {
+            const built = buildTurnNotation(
+                [
+                    { attack: 'Frightful Presence', count: 1 },
+                    { attack: 'Bite', count: 1 },
+                ],
+                byName(DRAGON_ACTIONS).get.bind(byName(DRAGON_ACTIONS)),
+                'normal'
+            );
+            expect(built?.skipped).toEqual(['Frightful Presence']);
+            expect(built?.parts.map((p) => p.attack)).toEqual(['Bite', 'Bite']);
+            expect(
+                buildTurnNotation(
+                    [{ attack: 'Nope', count: 1 }],
+                    () => undefined,
+                    'normal'
+                )
+            ).toBeNull();
+        });
+    });
+
+    describe('critExtraFormula', () => {
+        it('returns dice-only, no modifier', () => {
+            expect(critExtraFormula('2d8 + 5')).toBe('2d8');
+            expect(critExtraFormula('1d10+5')).toBe('1d10');
+            expect(critExtraFormula('8')).toBeNull();
+            expect(critExtraFormula('not dice')).toBeNull();
+        });
+    });
+
+    describe('mapTurnGroups', () => {
+        const d20Group = (value: number) => ({
+            diceType: 'd20',
+            dice: [{ kept: true, value, diceType: 'd20' }],
+            total: value,
+        });
+        const dmgGroup = (total: number) => ({
+            diceType: 'd10',
+            dice: [{ kept: true, value: total, diceType: 'd10' }],
+            total,
+        });
+
+        it('labels parts in order and flags Nat20 attacks', () => {
+            const built = buildTurnNotation(
+                [{ attack: 'Beak', count: 1 }],
+                new Map(OWLBEAR_ACTIONS.map((a) => [a.name, a])).get.bind(
+                    new Map(OWLBEAR_ACTIONS.map((a) => [a.name, a]))
+                ),
+                'normal'
+            );
+            const mapped = mapTurnGroups(built!.parts, [d20Group(20), dmgGroup(12)]);
+            expect(mapped).toEqual([
+                { label: 'Beak attack', notation: '1d20+7', total: 20, nat20: true, ok: true, extra: '1d10' },
+                { label: 'Beak damage', notation: '1d10+5', total: 12, nat20: false, ok: true, extra: undefined },
+            ]);
+        });
+
+        it('numbers repeated attacks; null on shape mismatch', () => {
+            const parts = [
+                { attack: 'Claw', rep: 1, kinds: 'attack', formula: '1d20+14', notation: '1d20+14' },
+                { attack: 'Claw', rep: 1, kinds: 'damage', formula: '2d6 + 8', notation: '2d6+8' },
+                { attack: 'Claw', rep: 2, kinds: 'attack', formula: '1d20+14', notation: '1d20+14' },
+                { attack: 'Claw', rep: 2, kinds: 'damage', formula: '2d6 + 8', notation: '2d6+8' },
+            ] as const;
+            const mapped = mapTurnGroups([...parts], [
+                d20Group(7),
+                dmgGroup(11),
+                d20Group(9),
+                dmgGroup(13),
+            ]);
+            expect(mapped?.map((m) => m.label)).toEqual([
+                'Claw 1 attack',
+                'Claw 1 damage',
+                'Claw 2 attack',
+                'Claw 2 damage',
+            ]);
+            expect(mapTurnGroups([...parts], [d20Group(7)])).toBeNull();
+            expect(mapTurnGroups([...parts], 'nope')).toBeNull();
+        });
+    });
+
+    describe('sendTurnRequest', () => {
+        // Answer the turn request with per-part groups (kept d20 = value).
+        function autoAnswerTurn(values: number[]): () => void {
             let answered = 0;
             const timer = setInterval(() => {
                 const calls = mockedSendMessage.mock.calls;
@@ -228,7 +348,13 @@ describe('routines.ts', () => {
                     const handlers = mockedOnMessage.mock.calls.map((c) => c[1] as (e: unknown) => void);
                     const event = {
                         rollId: rid,
-                        result: { groups: [{ diceType: 'd20', dice: [{ kept: true, value }] }] },
+                        result: {
+                            groups: values.map((v) => ({
+                                diceType: 'd20',
+                                dice: [{ kept: true, value: v, diceType: 'd20' }],
+                                total: v,
+                            })),
+                        },
                     };
                     for (const h of handlers) {
                         try { h(event); } catch { /* noop */ }
@@ -239,6 +365,39 @@ describe('routines.ts', () => {
             return () => clearInterval(timer);
         }
 
+        it('sends ONE compound request and returns the groups', async () => {
+            const stop = autoAnswerTurn([19, 12, 7, 15]);
+            const outcome = await sendTurnRequest('1d20+7+1d10+5+1d20+7+2d8+5', 'everyone');
+            stop();
+            expect(mockedSendMessage).toHaveBeenCalledTimes(1);
+            const payload = mockedSendMessage.mock.calls[0][1] as {
+                diceNotation: string;
+                showResults: boolean;
+                rollTarget: string;
+            };
+            expect(payload.diceNotation).toBe('1d20+7+1d10+5+1d20+7+2d8+5');
+            expect(payload.showResults).toBe(true);
+            expect(payload.rollTarget).toBe('everyone');
+            expect(outcome.ok).toBe(true);
+            if (outcome.ok) expect(outcome.groups).toHaveLength(4);
+        });
+
+        it('roll-error resolves ok:false with the message', async () => {
+            const promise = sendTurnRequest('1d20+7', 'everyone');
+            // Let the subscribe happen, then fire the error for our rid.
+            await new Promise((r) => setTimeout(r, 5));
+            const rid = (mockedSendMessage.mock.calls[0][1] as { rollId: string }).rollId;
+            // Fire ONLY the roll-error subscriber (the last one): the same
+            // payload at the result handler would (correctly) resolve first
+            // as "no groups".
+            const errorHandler = mockedOnMessage.mock.calls[mockedOnMessage.mock.calls.length - 1][1] as (e: unknown) => void;
+            errorHandler({ rollId: rid, error: 'bad notation' });
+            const outcome = await promise;
+            expect(outcome).toEqual({ ok: false, rollId: rid, error: 'bad notation' });
+        });
+    });
+
+    describe('sendSingleRoll (Dice+)', () => {
         function diceCtx(): SendContext {
             return {
                 rollTarget: 'everyone',
@@ -250,36 +409,6 @@ describe('routines.ts', () => {
                 silent: true,
             };
         }
-
-        it('routine of 2 attacks produces 4 sequential sends in order', async () => {
-            const steps: RoutineStep[] = [
-                { attack: 'Beak', count: 1 },
-                { attack: 'Claws', count: 1 },
-            ];
-            const byName = new Map(OWLBEAR_ACTIONS.map((a) => [a.name, a]));
-            const seen: string[] = [];
-            const stopAnswering = autoAnswerDicePlus(7);
-            await executeRoutine(steps, [], {
-                lookupAction: (name) => byName.get(name),
-                send: async (seg, opts) => {
-                    const o = await sendSingleRoll(seg, { ...diceCtx(), awaitDiceResult: opts.awaitDiceResult });
-                    seen.push(`${seg.kind}:${o.notation}`);
-                    return o;
-                },
-                log: () => {},
-                sleep: () => Promise.resolve(),
-            });
-            stopAnswering();
-            expect(mockedSendMessage).toHaveBeenCalledTimes(4);
-            const notations = mockedSendMessage.mock.calls.map((c) => (c[1] as { diceNotation: string }).diceNotation);
-            expect(notations).toEqual(['1d20+7', '1d10 + 5', '1d20+7', '2d8 + 5']);
-            expect(seen).toEqual([
-                'attack:1d20+7',
-                'damage:1d10 + 5',
-                'attack:1d20+7',
-                'damage:2d8 + 5',
-            ]);
-        });
 
         it('advantage turns attacks into 2d20kh1 and leaves damage untouched', async () => {
             const out = await sendSingleRoll(atkSeg('1d20+7'), { ...diceCtx(), advantage: 'adv' });
@@ -293,51 +422,6 @@ describe('routines.ts', () => {
             const out = await sendSingleRoll(dmgSeg('1d10 + 5'), { ...diceCtx(), critArmed: true });
             expect(out.notation).toBe('2d10+5');
             expect(out.critUsed).toBe(true);
-        });
-
-        it('Nat20 via Dice+ arms crit for the next damage step', async () => {
-            let armed = false;
-            const ctx: SendContext = {
-                ...diceCtx(),
-                setCritArmed: (v: boolean) => { armed = v; },
-                awaitDiceResult: true,
-            };
-            const promise = sendSingleRoll(atkSeg('1d20+7'), ctx);
-            const stopAnswering = autoAnswerDicePlus(20);
-            const out = await promise;
-            stopAnswering();
-            expect(out.nat20).toBe(true);
-            expect(armed).toBe(true);
-        });
-
-        it('a throwing step is logged as failed and the run continues', async () => {
-            const steps: RoutineStep[] = [
-                { attack: 'Beak', count: 1 },
-                { attack: 'Claws', count: 1 },
-            ];
-            const byName = new Map(OWLBEAR_ACTIONS.map((a) => [a.name, a]));
-            const labels: string[] = [];
-            let calls = 0;
-            const summary = await executeRoutine(steps, [], {
-                lookupAction: (name) => byName.get(name),
-                send: () => {
-                    calls += 1;
-                    if (calls === 2) throw new Error('broadcast boom');
-                    return Promise.resolve({
-                        ok: true, label: 'x', kind: 'attack',
-                        formula: '1d20+7', notation: '1d20+7',
-                    });
-                },
-                log: (e) => labels.push(`${e.label}:${e.ok ? 'ok' : 'FAIL'}`),
-                sleep: () => Promise.resolve(),
-            });
-            expect(summary).toEqual({ sent: 4, failed: 1 });
-            expect(labels).toEqual([
-                'Beak attack:ok',
-                'Beak damage:FAIL',
-                'Claws attack:ok',
-                'Claws damage:ok',
-            ]);
         });
 
         it('broadcast failure returns ok:false and unlocks', async () => {

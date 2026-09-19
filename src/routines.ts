@@ -9,8 +9,10 @@ import {
     critFormula,
     evaluateRoll,
     keptD20FromDicePlus,
+    parseDiceFormula,
     type Advantage,
 } from "./utils/diceRoller";
+import { DICE_PLUS_RESULT_TIMEOUT_MS } from "./initiative";
 
 /** A roll-capable segment (narrows RenderSegment). */
 export type RollSegment = Extract<RenderSegment, { type: "roll" }>;
@@ -30,10 +32,6 @@ export type RoutineLogEntry = {
     ok: boolean;
 };
 
-/** Gap between Dice+ sends so popups never overlap (bulk initiative uses 300). */
-export const ROUTINE_STEP_GAP_MS = 250;
-/** How long a routine attack waits for its Dice+ result before rolling damage anyway. */
-export const ROUTINE_ATTACK_RESULT_TIMEOUT_MS = 30_000;
 /** Singles safety unlock (mirrors RollButton): never block longer than this. */
 const DICE_SAFETY_UNLOCK_MS = 10_000;
 /** Fire-and-forget crit watch window for single clicks (mirrors RollButton). */
@@ -228,7 +226,7 @@ export function resolveRoutine(actions: unknown): ResolvedRoutine | null {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Shared single-roll sender (singles delegate; the routine runner loops it)
+// Shared single-roll sender (RollButton delegates; unchanged single behavior)
 // ────────────────────────────────────────────────────────────────────────────
 
 export type SendContext = {
@@ -238,10 +236,8 @@ export type SendContext = {
     critArmed: boolean;
     setCritArmed: (v: boolean) => void;
     setIsRolling: (v: boolean) => void;
-    /** Routine steps: suppress per-step notifications (one summary toast instead). */
+    /** Suppress per-roll notifications (turn follow-ups log inline instead). */
     silent?: boolean;
-    /** Routine attack steps: await the Dice+ result so Nat20 crits chain into damage. */
-    awaitDiceResult?: boolean;
 };
 
 export type RollOutcome = {
@@ -363,11 +359,10 @@ export async function sendSingleRoll(
 
         // Attack rolls: watch for the Dice+ result to auto-arm crit on Nat20
         // (kept d20 decides, mirrors Basic's kept-die rule). Listen BEFORE
-        // broadcast to avoid missing a fast response; singles watch
-        // fire-and-forget while routine attacks await so damage crits correctly.
-        let attackWatch: Promise<number | null> | null = null;
+        // broadcast to avoid missing a fast response; fire-and-forget —
+        // nothing here ever blocks on a result.
         if (segment.kind === "attack") {
-            attackWatch = new Promise<number | null>((resolve) => {
+            const watch = new Promise<number | null>((resolve) => {
                 let settled = false;
                 const cleanup = (value: number | null) => {
                     if (settled) return;
@@ -382,9 +377,7 @@ export async function sendSingleRoll(
                 };
                 const timer = setTimeout(
                     () => cleanup(null),
-                    ctx.awaitDiceResult
-                        ? ROUTINE_ATTACK_RESULT_TIMEOUT_MS
-                        : SINGLE_CRIT_WATCH_MS
+                    SINGLE_CRIT_WATCH_MS
                 );
                 const unsub = OBR.broadcast.onMessage(
                     `${EXTENSION_ID}/roll-result`,
@@ -399,19 +392,8 @@ export async function sendSingleRoll(
                     }
                 );
             });
-        }
-
-        await OBR.broadcast.sendMessage(
-            "dice-plus/roll-request",
-            payload,
-            { destination: "ALL" }
-        );
-
-        let nat20 = false;
-        if (attackWatch) {
-            const armOnNat20 = async (kept: number | null) => {
+            void watch.then(async (kept) => {
                 if (kept !== 20) return;
-                nat20 = true;
                 ctx.setCritArmed(true);
                 if (!ctx.silent) {
                     await OBR.notification
@@ -423,13 +405,14 @@ export async function sendSingleRoll(
                             /* noop */
                         });
                 }
-            };
-            if (ctx.awaitDiceResult) {
-                await armOnNat20(await attackWatch);
-            } else {
-                void attackWatch.then(armOnNat20);
-            }
+            });
         }
+
+        await OBR.broadcast.sendMessage(
+            "dice-plus/roll-request",
+            payload,
+            { destination: "ALL" }
+        );
 
         // Consume crit like Basic does — otherwise Dice+ stays armed forever.
         if (critUsed) ctx.setCritArmed(false);
@@ -440,7 +423,7 @@ export async function sendSingleRoll(
             formula: segment.formula,
             notation,
             rollId: rid,
-            nat20,
+            nat20: false,
             critUsed,
         };
     } catch (err) {
@@ -458,122 +441,257 @@ export async function sendSingleRoll(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Routine runner (pure orchestration; ViewPopover injects OBR-backed deps)
+// One turn, one request: compound Dice+ notation + result group mapping.
+// A whole routine is a single broadcast ("1d20+7+1d10+5+..."); Dice+ answers
+// with ordered groups and our labels map back deterministically. Nothing ever
+// waits on one roll to decide the next — crits resolve from the groups.
 // ────────────────────────────────────────────────────────────────────────────
 
-export type RoutineRunnerDeps = {
-    lookupAction: (name: string) => unknown | undefined;
-    send: (
-        segment: RollSegment,
-        opts: { awaitDiceResult?: boolean }
-    ) => Promise<RollOutcome>;
-    log: (entry: RoutineLogEntry) => void;
-    sleep?: (ms: number) => Promise<void>;
+/** One dice term inside the compound notation. */
+export type TurnPart = {
+    attack: string;
+    rep: number;
+    kinds: "attack" | "damage";
+    formula: string;
+    notation: string;
 };
 
-const defaultSleep = (ms: number) =>
-    new Promise<void>((resolve) => setTimeout(resolve, ms));
+export type BuiltTurn = {
+    notation: string;
+    parts: TurnPart[];
+    /** Steps that lost their attack roll (logged as skipped lines). */
+    skipped: string[];
+};
 
-function outcomeNote(outcome: RollOutcome): string | undefined {
-    if (!outcome.ok) return outcome.error ?? "failed";
-    if (outcome.kind === "attack" && outcome.nat20) return "Nat 20 — crit armed";
-    if (outcome.critUsed) return "crit";
-    return undefined;
+/** Compact: Dice+ notations carry no spaces ("1d10 + 5" -> "1d10+5"). */
+function compactNotation(formula: string): string {
+    return formula.replace(/\s+/g, "");
 }
 
 /**
- * Execute steps in order (attack then damage per sub-attack, count repeats).
- * Individual failures are logged and never abort the run. Sequential —
- * never parallelized, so Dice+ popups can't overlap.
+ * Build the compound turn notation from resolved steps: attack then damage
+ * per sub-attack, count repeats, advantage on attacks only. Returns null
+ * when nothing runnable remains.
  */
-export async function executeRoutine(
+export function buildTurnNotation(
     steps: RoutineStep[],
-    skipped: string[],
-    deps: RoutineRunnerDeps
-): Promise<{ sent: number; failed: number }> {
-    const sleep = deps.sleep ?? defaultSleep;
-    let sent = 0;
-    let failed = 0;
-    let firstSend = true;
-
-    for (const name of skipped) {
-        deps.log({
-            label: name,
-            note: "skipped — non-attack entry",
-            ok: true,
-        });
-    }
-
+    lookupAction: (name: string) => unknown | undefined,
+    advantage: Advantage
+): BuiltTurn | null {
+    const parts: TurnPart[] = [];
+    const skipped: string[] = [];
     for (const step of steps) {
+        const action = lookupAction(step.attack);
+        const hit = action ? getAttackHitSegment(action) : null;
+        if (!hit) {
+            skipped.push(step.attack);
+            continue;
+        }
         for (let i = 0; i < step.count; i++) {
-            const action = deps.lookupAction(step.attack);
-            const hit = action ? getAttackHitSegment(action) : null;
-            if (!hit) {
-                deps.log({
-                    label: step.attack,
-                    note: "skipped — no attack roll",
-                    ok: false,
-                });
-                failed += 1;
-                continue;
-            }
-            const countSuffix = step.count > 1 ? ` (${i + 1}/${step.count})` : "";
-
-            if (!firstSend) await sleep(ROUTINE_STEP_GAP_MS);
-            firstSend = false;
-            let attackOutcome: RollOutcome;
-            try {
-                attackOutcome = await deps.send(hit, { awaitDiceResult: true });
-            } catch (err) {
-                attackOutcome = {
-                    ok: false,
-                    label: hit.label,
-                    kind: "attack",
-                    formula: hit.formula,
-                    notation: hit.formula,
-                    error: describeError(err),
-                };
-            }
-            sent += 1;
-            if (!attackOutcome.ok) failed += 1;
-            deps.log({
-                label: `${step.attack} attack${countSuffix}`,
-                formula: attackOutcome.formula,
-                notation: attackOutcome.notation,
-                total: attackOutcome.total,
-                rollId: attackOutcome.rollId,
-                note: outcomeNote(attackOutcome),
-                ok: attackOutcome.ok,
+            parts.push({
+                attack: step.attack,
+                rep: i + 1,
+                kinds: "attack",
+                formula: hit.formula,
+                notation: compactNotation(
+                    applyAdvantageNotation(hit.formula, advantage)
+                ),
             });
-
             const damage = action ? getAttackDamageSegment(action) : null;
-            if (!damage) continue;
-            await sleep(ROUTINE_STEP_GAP_MS);
-            let damageOutcome: RollOutcome;
-            try {
-                damageOutcome = await deps.send(damage, {});
-            } catch (err) {
-                damageOutcome = {
-                    ok: false,
-                    label: damage.label,
-                    kind: "damage",
+            if (damage) {
+                parts.push({
+                    attack: step.attack,
+                    rep: i + 1,
+                    kinds: "damage",
                     formula: damage.formula,
-                    notation: damage.formula,
-                    error: describeError(err),
-                };
+                    notation: compactNotation(damage.formula),
+                });
             }
-            sent += 1;
-            if (!damageOutcome.ok) failed += 1;
-            deps.log({
-                label: `${step.attack} damage${countSuffix}`,
-                formula: damageOutcome.formula,
-                notation: damageOutcome.notation,
-                total: damageOutcome.total,
-                rollId: damageOutcome.rollId,
-                note: outcomeNote(damageOutcome),
-                ok: damageOutcome.ok,
-            });
         }
     }
-    return { sent, failed };
+    if (parts.length === 0) return null;
+    return { notation: parts.map((p) => p.notation).join("+"), parts, skipped };
+}
+
+/**
+ * Crit extra dice for a damage formula: one more set of the damage dice,
+ * no modifier ("2d8 + 5" -> "2d8"). Offered as a non-blocking follow-up
+ * when the turn result shows a Nat20 — the physical "roll extra on crit".
+ */
+export function critExtraFormula(damageFormula: string): string | null {
+    const cleaned = (damageFormula || "").replace(/\s+/g, "");
+    if (!cleaned) return null;
+    const parsed = parseDiceFormula(cleanedSafe(cleaned));
+    if (parsed.dice.length === 0) return null;
+    return parsed.dice.map(({ count, sides }) => `${count}d${sides}`).join("+");
+}
+
+/** Guard: only feed plausible notations to the parser (never throws). */
+function cleanedSafe(cleaned: string): string {
+    return /^[+-]?(?:(?:\d*)d\d+|\d+)(?:[+-](?:(?:\d*)d\d+|\d+))*$/i.test(cleaned)
+        ? cleaned
+        : "";
+}
+
+/** A Dice+ result group (per-docs shape; unknown-tolerant). */
+export type DicePlusGroup = {
+    diceType?: unknown;
+    dice?: { value?: unknown; kept?: unknown; diceType?: unknown }[];
+    total?: unknown;
+};
+
+/** One mapped turn line for inline display. */
+export type TurnResult = {
+    label: string;
+    notation: string;
+    total?: number;
+    nat20: boolean;
+    ok: boolean;
+    /** Crit extra dice for a Nat20 attack ("1d10") — non-blocking follow-up. */
+    extra?: string;
+};
+
+/**
+ * Map Dice+ result groups back to turn parts by position (Dice+ returns
+ * groups in notation order). Returns null on any shape mismatch so callers
+ * fall back to raw display instead of mislabeling dice.
+ */
+export function mapTurnGroups(
+    parts: TurnPart[],
+    groups: unknown
+): TurnResult[] | null {
+    if (!Array.isArray(groups) || groups.length !== parts.length) return null;
+    const results: TurnResult[] = [];
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const g = groups[i] as DicePlusGroup;
+        if (!g || typeof g !== "object" || !Array.isArray(g.dice)) return null;
+        const total = typeof g.total === "number" ? g.total : undefined;
+        const nat20 =
+            part.kinds === "attack" && keptD20FromDicePlus([g]) === 20;
+        const repSuffix =
+            parts.filter((p) => p.attack === part.attack && p.kinds === part.kinds)
+                .length > 1
+                ? ` ${part.rep}`
+                : "";
+        // Crit extra rides on the attack line: its damage sibling's dice.
+        let extra: string | undefined;
+        if (nat20) {
+            const sibling = parts.find(
+                (p) =>
+                    p.attack === part.attack &&
+                    p.rep === part.rep &&
+                    p.kinds === "damage"
+            );
+            extra = sibling ? critExtraFormula(sibling.formula) ?? undefined : undefined;
+        }
+        results.push({
+            label: `${part.attack}${repSuffix} ${part.kinds}`,
+            notation: part.notation,
+            total,
+            nat20,
+            ok: total !== undefined,
+            extra,
+        });
+    }
+    return results;
+}
+
+export type TurnSendOutcome =
+    | { ok: true; rollId: string; groups: DicePlusGroup[] }
+    | { ok: false; rollId: string; error: string };
+
+/**
+ * Send the compound turn as ONE Dice+ request (listen-before-broadcast,
+ * same 10 s timeout as initiative). Resolves on result, roll-error, or
+ * timeout — never longer, never stuck.
+ */
+export async function sendTurnRequest(
+    notation: string,
+    rollTarget: string
+): Promise<TurnSendOutcome> {
+    const player = await OBR.player.getName();
+    const playerId = await OBR.player.getId();
+    const ts = Date.now();
+    const rid = "turn_" + ts + "_" + Math.random().toString(36).substring(7);
+
+    const outcome = new Promise<TurnSendOutcome>((resolve) => {
+        let settled = false;
+        const cleanup = (value: TurnSendOutcome) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            try {
+                unsubResult?.();
+            } catch {
+                /* noop */
+            }
+            try {
+                unsubError?.();
+            } catch {
+                /* noop */
+            }
+            resolve(value);
+        };
+        const timer = setTimeout(
+            () => cleanup({ ok: false, rollId: rid, error: "Dice+ timed out" }),
+            DICE_PLUS_RESULT_TIMEOUT_MS
+        );
+        const unsubResult = OBR.broadcast.onMessage(
+            `${EXTENSION_ID}/roll-result`,
+            (event: unknown) => {
+                const wrapper = event as { data?: unknown } | undefined;
+                const p = (wrapper?.data ?? event) as {
+                    rollId?: unknown;
+                    result?: { groups?: unknown };
+                };
+                if (p?.rollId !== rid) return;
+                const groups = p?.result?.groups;
+                if (!Array.isArray(groups)) {
+                    cleanup({ ok: false, rollId: rid, error: "Dice+ sent no groups" });
+                    return;
+                }
+                cleanup({ ok: true, rollId: rid, groups: groups as DicePlusGroup[] });
+            }
+        );
+        const unsubError = OBR.broadcast.onMessage(
+            `${EXTENSION_ID}/roll-error`,
+            (event: unknown) => {
+                const wrapper = event as { data?: unknown } | undefined;
+                const p = (wrapper?.data ?? event) as {
+                    rollId?: unknown;
+                    error?: unknown;
+                };
+                if (p?.rollId !== rid) return;
+                cleanup({
+                    ok: false,
+                    rollId: rid,
+                    error:
+                        typeof p?.error === "string" && p.error
+                            ? p.error
+                            : "Dice+ reported an error",
+                });
+            }
+        );
+    });
+
+    try {
+        await OBR.broadcast.sendMessage(
+            "dice-plus/roll-request",
+            {
+                rollId: rid,
+                playerId: playerId,
+                playerName: player,
+                rollTarget: rollTarget,
+                diceNotation: notation,
+                showResults: true,
+                timestamp: ts,
+                source: EXTENSION_ID,
+            },
+            { destination: "ALL" }
+        );
+    } catch (err) {
+        return { ok: false, rollId: rid, error: describeError(err) };
+    }
+    return outcome;
 }
