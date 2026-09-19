@@ -591,12 +591,20 @@ export function mapTurnGroups(
         const part = parts[i];
         const g = groups[i] as DicePlusGroup;
         if (!g || typeof g !== "object" || !Array.isArray(g.dice)) return null;
-        const total = typeof g.total === "number" ? g.total : undefined;
         const nat20 =
             part.kinds === "attack" && keptD20FromDicePlus([g]) === 20;
-        // Breakdown from OUR formula (modifier split) + Dice+ kept dice.
+        // Dice+ group totals are dice-only: the "+7" lives in OUR formula,
+        // so the line total is dice + parsed modifier. (Probe 2026-09-19:
+        // a "1d20+7" group with a 2 reports total 2, not 9.)
         const modifier = parseDiceFormula(part.formula).modifier;
-        const detail = formatRollDetail(keptGroupValues(g), modifier);
+        const kept = keptGroupValues(g);
+        const diceTotal =
+            typeof g.total === "number"
+                ? g.total
+                : kept.reduce((a, b) => a + b, 0);
+        const hasDice = kept.length > 0 || typeof g.total === "number";
+        const total = hasDice ? diceTotal + modifier : undefined;
+        const detail = formatRollDetail(kept, modifier);
         const repSuffix =
             parts.filter((p) => p.attack === part.attack && p.kinds === part.kinds)
                 .length > 1

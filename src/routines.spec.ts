@@ -317,10 +317,30 @@ describe('routines.ts', () => {
                 ),
                 'normal'
             );
+            // Groups are dice-only: line total adds OUR modifier (probe 2026-09-19).
             const mapped = mapTurnGroups(built!.parts, [d20Group(20), dmgGroup(12)]);
             expect(mapped).toEqual([
-                { label: 'Beak attack', notation: '1d20+7', total: 20, detail: '[20] + 7', nat20: true, ok: true, extra: '1d10' },
-                { label: 'Beak damage', notation: '1d10+5', total: 12, detail: '[12] + 5', nat20: false, ok: true, extra: undefined },
+                { label: 'Beak attack', notation: '1d20+7', total: 27, detail: '[20] + 7', nat20: true, ok: true, extra: '1d10' },
+                { label: 'Beak damage', notation: '1d10+5', total: 17, detail: '[12] + 5', nat20: false, ok: true, extra: undefined },
+            ]);
+        });
+
+        it('adds the modifier to multi-die dice totals', () => {
+            const parts = [
+                { attack: 'Claws', rep: 1, kinds: 'damage', formula: '2d8 + 5', notation: '2d8+5' },
+            ] as const;
+            const mapped = mapTurnGroups([...parts], [
+                {
+                    diceType: 'd8',
+                    dice: [
+                        { kept: true, value: 3, diceType: 'd8' },
+                        { kept: true, value: 6, diceType: 'd8' },
+                    ],
+                    total: 9,
+                },
+            ]);
+            expect(mapped).toEqual([
+                { label: 'Claws damage', notation: '2d8+5', total: 14, detail: '[3, 6] + 5', nat20: false, ok: true, extra: undefined },
             ]);
         });
 
