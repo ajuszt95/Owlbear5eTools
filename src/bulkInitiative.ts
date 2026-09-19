@@ -47,6 +47,26 @@ export function eligibleForRun(candidates: BulkToken[], checkedIds: Set<string>)
     return candidates.filter((c) => checkedIds.has(c.id));
 }
 
+/**
+ * Pure checkbox-state merge for preview refreshes: tokens already on screen
+ * keep the DM's checks (an unchecked stray stays unchecked); brand-new ids
+ * default to checked (participate unless excluded); vanished ids drop out.
+ * First load (no previous ids) checks everything.
+ */
+export function mergeCheckedIds(
+    prevChecked: Set<string>,
+    prevIds: Set<string>,
+    nextIds: string[]
+): Set<string> {
+    const next = new Set<string>();
+    for (const id of nextIds) {
+        if (!prevIds.has(id) || prevChecked.has(id)) {
+            next.add(id);
+        }
+    }
+    return next;
+}
+
 /** Presence check only (any shape) — lair fetching itself is issue #8's job. */
 export function hasLair(token: BulkToken): boolean {
     const lg = token.monster.legendaryGroup;

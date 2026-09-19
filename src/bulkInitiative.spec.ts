@@ -5,6 +5,7 @@ import {
     collectMonsterTokens,
     eligibleForRun,
     hasLair,
+    mergeCheckedIds,
     readExistingCounts,
     runBulkInitiative,
     type BulkToken,
@@ -84,6 +85,19 @@ describe('bulkInitiative.ts', () => {
             const candidates = [goblinToken('a'), goblinToken('b'), goblinToken('c')];
             expect(eligibleForRun(candidates, new Set(['c', 'a'])).map((t) => t.id)).toEqual(['a', 'c']);
             expect(eligibleForRun(candidates, new Set())).toEqual([]);
+        });
+    });
+
+    describe('mergeCheckedIds', () => {
+        it('checks everything on first load', () => {
+            expect(mergeCheckedIds(new Set(), new Set(), ['a', 'b'])).toEqual(new Set(['a', 'b']));
+        });
+
+        it('preserves unchecks, checks newcomers, drops the vanished', () => {
+            // DM unchecked the stray Fighter (f); goblin c is new, a is gone.
+            expect(
+                mergeCheckedIds(new Set(['g1', 'g2']), new Set(['g1', 'g2', 'f']), ['g1', 'g2', 'f', 'c'])
+            ).toEqual(new Set(['g1', 'g2', 'c']));
         });
     });
 

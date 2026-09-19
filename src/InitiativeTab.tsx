@@ -4,6 +4,7 @@ import {
     collectMonsterTokens,
     eligibleForRun,
     hasLair,
+    mergeCheckedIds,
     readExistingCounts,
     runBulkInitiative,
     type BulkRow,
@@ -78,15 +79,17 @@ export default function InitiativeTab({ active }: { active: boolean }) {
         try {
             const items = await OBR.scene.items.getItems();
             const found = collectMonsterTokens(items);
+            const prevIds = new Set(candidates.map((t) => t.id));
             setCandidates(found);
             setCounts(await readExistingCounts(found.map((t) => t.id)));
-            setChecked(new Set(found.map((t) => t.id)));
+            // Preserve the DM's unchecks across refreshes; new tokens join checked.
+            setChecked((prev) => mergeCheckedIds(prev, prevIds, found.map((t) => t.id)));
             setRows([]);
             setProgress(null);
-            setLoaded(true);
         } catch (err: unknown) {
             setError(`Failed to read scene tokens: ${describeError(err)}`);
         } finally {
+            setLoaded(true);
             setRefreshing(false);
         }
     };
