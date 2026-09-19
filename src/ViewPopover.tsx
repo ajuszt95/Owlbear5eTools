@@ -2,8 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID, INITIATIVE_METADATA_KEY } from "./Background";
 import { render5etoolsText, render5etoolsPlainText, type RenderSegment } from "./utils/renderer";
-import { critFormula, evaluateRoll, type Advantage } from "./utils/diceRoller";
-import { buildTurnNotation, formatRollDetail, getAttackDamageSegment, mapTurnGroups, resolveRoutine, sendSingleRoll, sendTurnRequest, type RollSegment, type TurnResult } from "./routines";
+import { critFormula, type Advantage } from "./utils/diceRoller";
+import { buildTurnNotation, evaluateTurnBasic, getAttackDamageSegment, mapTurnGroups, resolveRoutine, sendSingleRoll, sendTurnRequest, type RollSegment, type TurnResult } from "./routines";
 import { dexModifier, initiativeNotation, initiativeTiebreakTotal, rollInitiativeBasic, writeInitiative } from "./initiative";
 import { APP_VERSION } from "./version";
 
@@ -957,27 +957,7 @@ export default function ViewPopover() {
 
             // ── Basic engine: instant local eval per part, same model as singles.
             if (rollEngine === "basic") {
-                setTurnLines(
-                    built.parts.map((part) => {
-                        const result = evaluateRoll(part.notation, { label: part.attack });
-                        const repCount = built.parts.filter(
-                            (p) => p.attack === part.attack && p.kinds === part.kinds
-                        ).length;
-                        const label = `${part.attack}${repCount > 1 ? ` ${part.rep}` : ""} ${part.kinds}`;
-                        const nat20 =
-                            part.kinds === "attack" &&
-                            result.keptRolls.length > 0 &&
-                            result.keptRolls[0] === 20;
-                        return {
-                            label,
-                            notation: part.notation,
-                            total: result.total,
-                            detail: formatRollDetail(result.keptRolls, result.modifier),
-                            nat20,
-                            ok: true,
-                        };
-                    })
-                );
+                setTurnLines(evaluateTurnBasic(built.parts, rollAdvantage));
                 return;
             }
 

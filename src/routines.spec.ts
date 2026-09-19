@@ -3,6 +3,7 @@ import OBR from '@owlbear-rodeo/sdk';
 import {
     buildTurnNotation,
     critExtraFormula,
+    evaluateTurnBasic,
     formatRollDetail,
     getAttackDamageFormula,
     getAttackHitFormula,
@@ -294,6 +295,27 @@ describe('routines.ts', () => {
             expect(formatRollDetail([9], -2)).toBe('[9] - 2');
             expect(formatRollDetail([9], 0)).toBe('[9]');
             expect(formatRollDetail([], 7)).toBeUndefined();
+        });
+    });
+
+    describe('evaluateTurnBasic', () => {
+        const owlbearByName = new Map(OWLBEAR_ACTIONS.map((a) => [a.name, a]));
+
+        it('evaluates base formulas with native advantage (never keep-syntax)', () => {
+            // Regression: feeding "2d20kh1+7" to evaluateRoll kept both dice
+            // and hallucinated a +1 out of the "kh1" (20+17+8=45).
+            const built = buildTurnNotation(
+                [{ attack: 'Beak', count: 1 }],
+                owlbearByName.get.bind(owlbearByName),
+                'adv'
+            );
+            // Forced max-first roller: adv keeps 20, modifier stays 7.
+            const rolls = [20, 17, 2];
+            const lines = evaluateTurnBasic(built!.parts, 'adv', () => rolls.shift()!);
+            expect(lines).toEqual([
+                { label: 'Beak attack', notation: '1d20+7', total: 27, detail: '[20] + 7', nat20: true, ok: true },
+                { label: 'Beak damage', notation: '1d10 + 5', total: 7, detail: '[2] + 5', nat20: false, ok: true },
+            ]);
         });
     });
 

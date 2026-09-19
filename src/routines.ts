@@ -576,6 +576,41 @@ function keptGroupValues(g: DicePlusGroup): number[] {
         .map((d) => d.value as number);
 }
 
+function turnLabel(part: TurnPart, parts: TurnPart[]): string {
+    const repCount = parts.filter(
+        (p) => p.attack === part.attack && p.kinds === part.kinds
+    ).length;
+    return `${part.attack}${repCount > 1 ? ` ${part.rep}` : ""} ${part.kinds}`;
+}
+
+/**
+ * Basic-engine turn: evaluate each BASE formula locally with the native
+ * advantage option (mirrors singles). Never the Dice+ notation — evaluateRoll
+ * cannot parse keep-syntax ("2d20kh1+7" keeps both dice and hallucinates a
+ * +1 modifier out of the "kh1").
+ */
+export function evaluateTurnBasic(
+    parts: TurnPart[],
+    advantage: Advantage,
+    roller?: (sides: number) => number
+): TurnResult[] {
+    return parts.map((part) => {
+        const result = evaluateRoll(part.formula, {
+            label: part.attack,
+            advantage,
+            ...(roller ? { roller } : {}),
+        });
+        return {
+            label: turnLabel(part, parts),
+            notation: part.formula,
+            total: result.total,
+            detail: formatRollDetail(result.keptRolls, result.modifier),
+            nat20: part.kinds === "attack" && result.isNat20,
+            ok: true,
+        };
+    });
+}
+
 /**
  * Map Dice+ result groups back to turn parts by position (Dice+ returns
  * groups in notation order). Returns null on any shape mismatch so callers
@@ -605,11 +640,6 @@ export function mapTurnGroups(
         const hasDice = kept.length > 0 || typeof g.total === "number";
         const total = hasDice ? diceTotal + modifier : undefined;
         const detail = formatRollDetail(kept, modifier);
-        const repSuffix =
-            parts.filter((p) => p.attack === part.attack && p.kinds === part.kinds)
-                .length > 1
-                ? ` ${part.rep}`
-                : "";
         // Crit extra rides on the attack line: its damage sibling's dice.
         let extra: string | undefined;
         if (nat20) {
@@ -622,7 +652,7 @@ export function mapTurnGroups(
             extra = sibling ? critExtraFormula(sibling.formula) ?? undefined : undefined;
         }
         results.push({
-            label: `${part.attack}${repSuffix} ${part.kinds}`,
+            label: turnLabel(part, parts),
             notation: part.notation,
             total,
             detail,
