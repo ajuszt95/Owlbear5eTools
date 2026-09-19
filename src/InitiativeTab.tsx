@@ -185,7 +185,7 @@ export default function InitiativeTab({ active }: { active: boolean }) {
             <p style={{ fontSize: "13px", color: "#666", marginBottom: "16px" }}>
                 Roll initiative for every monster token at once. Uncheck tokens to exclude them.
                 <br />
-                <span style={{ fontStyle: "italic" }}>If the list looks out of date, hit Refresh.</span>
+                <span style={{ fontStyle: "italic" }}>If the list looks out of date, hit the Refresh button above.</span>
             </p>
 
             <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "12px" }}>
