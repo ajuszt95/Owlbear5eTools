@@ -3,6 +3,7 @@ import OBR from "@owlbear-rodeo/sdk";
 import { fetchMonsterData, fetchMonsterByIdentity } from "./api";
 import { spawnMonstersFromData, MAX_SPAWN_COUNT } from "./spawning";
 import MonsterSearchInput from "./MonsterSearchInput";
+import InitiativeTab from "./InitiativeTab";
 import type { MonsterIndexEntry } from "./monsterIndex";
 import { formatMonsterEntrySubtitle } from "./monsterIndex";
 import { APP_VERSION } from "./version";
@@ -15,6 +16,7 @@ export default function HelpPopover() {
     const [success, setSuccess] = useState("");
     const [spawnCount, setSpawnCount] = useState(1);
     const [countNote, setCountNote] = useState("");
+    const [activeTab, setActiveTab] = useState<"spawn" | "initiative">("spawn");
     const [role, setRole] = useState<string | null>(null);
 
     useEffect(() => {
@@ -142,6 +144,32 @@ export default function HelpPopover() {
                 </h2>
             </header>
 
+            {/* TAB BAR — both tabs stay mounted (display:none when inactive) so a
+                mid-run switch never kills the bulk initiative await loop. */}
+            <div style={{ display: "flex", background: "#ddd", borderRadius: "15px", padding: "2px", marginBottom: "24px" }}>
+                {(["spawn", "initiative"] as const).map((tab) => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        style={{
+                            flex: 1,
+                            border: "none",
+                            borderRadius: "13px",
+                            padding: "6px 8px",
+                            background: activeTab === tab ? "#58180D" : "transparent",
+                            color: activeTab === tab ? "white" : "#666",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: 600,
+                            transition: "all 0.2s",
+                        }}
+                    >
+                        {tab === "spawn" ? "Quick Spawn" : "Encounter Initiative"}
+                    </button>
+                ))}
+            </div>
+
+            <div style={{ display: activeTab === "spawn" ? "block" : "none" }}>
             {/* QUICK SPAWN SECTION */}
             <section style={{
                 marginBottom: "32px",
@@ -305,6 +333,11 @@ export default function HelpPopover() {
                     Open the 5e Tools view on a token and click <strong>"Remove"</strong> to reset all linked data.
                 </p>
             </section>
+            </div>
+
+            <div style={{ display: activeTab === "initiative" ? "block" : "none" }}>
+                <InitiativeTab active={activeTab === "initiative"} />
+            </div>
 
             <footer style={{
                 marginTop: "40px",
