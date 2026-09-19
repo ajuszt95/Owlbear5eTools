@@ -189,17 +189,6 @@ export default function InitiativeTab({ active }: { active: boolean }) {
             <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "12px" }}>
                 <div>
                     <label style={{ fontSize: "12px", fontWeight: 600, color: "#58180D", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
-                        Scope
-                    </label>
-                    <div style={{ fontSize: "13px", color: "#333", padding: "3px 0" }}>
-                        All monster tokens on scene
-                    </div>
-                    <div style={{ fontSize: "11px", color: "#999", fontStyle: "italic" }}>
-                        The SDK exposes no selection read — uncheck tokens below to exclude them.
-                    </div>
-                </div>
-                <div>
-                    <label style={{ fontSize: "12px", fontWeight: 600, color: "#58180D", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
                         Existing values
                     </label>
                     <div style={pillTrack}>
