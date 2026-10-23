@@ -20,6 +20,26 @@ const GITHUB_MIRROR_BASE = "https://raw.githubusercontent.com/5etools-mirror-3/5
 const GITHUB_IMAGE_BASE = "https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main";
 
 /**
+ * The mirror names the Plane Shift books with a hyphen (`bestiary-ps-a.json`),
+ * unlike every other source whose filename is just the lowercased source code.
+ * Keep the exception explicit so URL imports and search picks resolve the same
+ * file. Token directories still use the bare source code (`tokens/PSA/...`).
+ */
+const OFFICIAL_BESTIARY_FILE_OVERRIDES: Record<string, string> = {
+    psa: "bestiary-ps-a.json",
+    psd: "bestiary-ps-d.json",
+    psi: "bestiary-ps-i.json",
+    psk: "bestiary-ps-k.json",
+    psx: "bestiary-ps-x.json",
+    psz: "bestiary-ps-z.json",
+};
+
+export function getOfficialBestiaryFilename(source: string): string {
+    const lower = source.trim().toLowerCase();
+    return OFFICIAL_BESTIARY_FILE_OVERRIDES[lower] ?? `bestiary-${lower}.json`;
+}
+
+/**
  * Calculates a reliable GitHub Raw mirror URL for a monster token.
  * We prefer GitHub for reliability and CORS compatibility.
  */
@@ -98,7 +118,7 @@ export async function fetchMonsterByIdentity(
         // community homebrew repo; WotC books live in the official mirror.
         const homebrewUrl = getPartneredHomebrewUrl(cleanSource);
         const isPartnered = homebrewUrl !== undefined;
-        const jsonUrl = homebrewUrl ?? `${GITHUB_MIRROR_BASE}/bestiary-${cleanSource.toLowerCase()}.json`;
+        const jsonUrl = homebrewUrl ?? `${GITHUB_MIRROR_BASE}/${getOfficialBestiaryFilename(cleanSource)}`;
         const response = await fetch(jsonUrl);
 
         if (!response.ok) {

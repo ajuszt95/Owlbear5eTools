@@ -7,6 +7,7 @@ import {
     fetchMonsterData,
     fetchMonsterByIdentity,
     buildCanonicalSourceUrl,
+    getOfficialBestiaryFilename,
     type Monster,
 } from './api';
 
@@ -31,6 +32,25 @@ describe('api.ts', () => {
 
         it('should use correct GitHub image base URL', () => {
             expect(calculateTokenUrl('Test', 'test')).toContain('5etools-mirror-3');
+        });
+    });
+
+    describe('getOfficialBestiaryFilename', () => {
+        it.each([
+            ['PSA', 'bestiary-ps-a.json'],
+            ['PSD', 'bestiary-ps-d.json'],
+            ['PSI', 'bestiary-ps-i.json'],
+            ['PSK', 'bestiary-ps-k.json'],
+            ['PSX', 'bestiary-ps-x.json'],
+            ['PSZ', 'bestiary-ps-z.json'],
+        ])('maps %s to the hyphenated mirror filename', (source, filename) => {
+            expect(getOfficialBestiaryFilename(source)).toBe(filename);
+        });
+
+        it('uses the lowercased source for every other official book', () => {
+            expect(getOfficialBestiaryFilename('MM')).toBe('bestiary-mm.json');
+            expect(getOfficialBestiaryFilename('XMM')).toBe('bestiary-xmm.json');
+            expect(getOfficialBestiaryFilename(' VGM ')).toBe('bestiary-vgm.json');
         });
     });
 
@@ -267,6 +287,31 @@ describe('api.ts', () => {
             );
             expect(result.tokenUrl).toBe(
                 'https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/bestiary/tokens/MM/Goblin.webp'
+            );
+        });
+
+        it('should fetch Plane Shift data from the hyphenated mirror filename', async () => {
+            const mockMonster: Monster = {
+                name: 'Adult Amonkhet Dragon',
+                source: 'PSA',
+                hp: { average: 187 },
+                ac: [19],
+                size: ['H'],
+            };
+
+            vi.mocked(global.fetch).mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ monster: [mockMonster] }),
+            } as Response);
+
+            const result = await fetchMonsterData('https://5e.tools/bestiary.html#adult%20amonkhet%20dragon_psa');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                'https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data/bestiary/bestiary-ps-a.json'
+            );
+            expect(result.name).toBe('Adult Amonkhet Dragon');
+            expect(result.tokenUrl).toBe(
+                'https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/bestiary/tokens/PSA/Adult%20Amonkhet%20Dragon.webp'
             );
         });
 

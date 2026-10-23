@@ -49,7 +49,7 @@ Async function. Entry point for all data loading.
 **Steps:**
 
 1. **Parse URL** — detects one of three 5e.tools URL formats (see below) and extracts `source` and `nameIdentifier`.
-2. **Resolve source** — looks the source up in `PARTNERED_HOMEBREW_SOURCES` (`src/homebrewSources.ts`). WotC books fetch `https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data/bestiary/bestiary-{SOURCE}.json`; partnered books fetch their file from `TheGiddyLimit/homebrew`.
+2. **Resolve source** — looks the source up in `PARTNERED_HOMEBREW_SOURCES` (`src/homebrewSources.ts`). WotC books fetch `https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data/bestiary/bestiary-{SOURCE}.json`; the six Plane Shift sources go through `getOfficialBestiaryFilename()`, which maps them to the mirror's hyphenated names (`PSA` → `bestiary-ps-a.json`). Partnered books fetch their file from `TheGiddyLimit/homebrew`.
 3. **Find monster** — sanitizes both the target name identifier and each monster name (strips all non-alphanumeric characters, lowercases), then exact-matches; falls back to prefix-match. For partnered books, candidates are first filtered to the URL's source id so duplicate names from other sources in the same file cannot win.
 4. **Attach helpers** — uses the monster's embedded `tokenHref.url` when present (partnered tokens live in `TheGiddyLimit/homebrew-img`; literal spaces are percent-encoded), otherwise falls back to `calculateTokenUrl` for WotC sources. Sets `sourceUrl` from the original URL.
 
