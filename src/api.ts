@@ -1,4 +1,5 @@
 import { crToNumber, scaleMonster } from "./utils/scaleCreature";
+import { getPartneredHomebrewUrl } from "./homebrewSources";
 
 export interface Monster {
     name: string;
@@ -6,7 +7,7 @@ export interface Monster {
     hp?: { average?: number; formula?: string; special?: number | string };
     ac?: Array<number | { ac: number }>;
     size?: string[]; // e.g. ["M"]
-    tokenUrl?: string; // Resolved GitHub Mirror URL
+    tokenUrl?: string; // Resolved token image URL (official mirror or homebrew-img)
     sourceUrl?: string; // Original 5e.tools URL
     _displayName?: string;
     _scaledCr?: number;
@@ -27,6 +28,19 @@ export function calculateTokenUrl(name: string, source: string): string {
     // Pattern: bestiary/tokens/[SOURCE]/[NAME].webp
     // Note: Spaces in the filename should be preserved or handled by the requester (encoded).
     return `${GITHUB_IMAGE_BASE}/bestiary/tokens/${source}/${encodeURIComponent(name)}.webp`;
+}
+
+/**
+ * Normalizes a URL embedded in 5e.tools data. Homebrew `tokenHref` values
+ * often contain literal spaces, which work in browsers but are safer
+ * percent-encoded before they reach OBR's asset pipeline.
+ */
+function normalizeEmbeddedUrl(raw: string): string {
+    try {
+        return new URL(raw).href;
+    } catch {
+        return raw;
+    }
 }
 
 /**
@@ -80,12 +94,16 @@ export async function fetchMonsterByIdentity(
     }
 
     try {
-        // Fetch the JSON for the specific book
-        const jsonUrl = `${GITHUB_MIRROR_BASE}/bestiary-${cleanSource.toLowerCase()}.json`;
+        // Partnered books (Tome of Beasts, Flee Mortals, etc.) live in the
+        // community homebrew repo; WotC books live in the official mirror.
+        const homebrewUrl = getPartneredHomebrewUrl(cleanSource);
+        const isPartnered = homebrewUrl !== undefined;
+        const jsonUrl = homebrewUrl ?? `${GITHUB_MIRROR_BASE}/bestiary-${cleanSource.toLowerCase()}.json`;
         const response = await fetch(jsonUrl);
 
         if (!response.ok) {
-            throw new Error(`Failed to fetch Bestiary data for book: ${cleanSource}. (Status ${response.status})`);
+            const sourceKind = isPartnered ? "partnered homebrew" : "Bestiary";
+            throw new Error(`Failed to fetch ${sourceKind} data for book: ${cleanSource}. (Status ${response.status})`);
         }
 
         const data = await response.json();
@@ -95,19 +113,26 @@ export async function fetchMonsterByIdentity(
             throw new Error(`No monsters found in book data for source: ${cleanSource}`);
         }
 
+        // A partnered file can host more than one source id, so prefer
+        // entries that match the source from the URL before matching names.
+        const sourceMatches = isPartnered
+            ? monsterList.filter((m) => m.source.toLowerCase() === cleanSource.toLowerCase())
+            : [];
+        const candidates = sourceMatches.length > 0 ? sourceMatches : monsterList;
+
         // Find the specific monster
         // Use a more relaxed sanitizer for external URLs which might have complex characters
         const sanitize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
         const targetNameSanitized = sanitize(cleanName);
 
-        let foundMonster = monsterList.find((m) =>
+        let foundMonster = candidates.find((m) =>
             sanitize(m.name) === targetNameSanitized ||
             targetNameSanitized === sanitize(m.name)
         );
 
         // Fallback matching if exact sanitized match fails
         if (!foundMonster) {
-            foundMonster = monsterList.find(m =>
+            foundMonster = candidates.find(m =>
                 sanitize(m.name).startsWith(targetNameSanitized) ||
                 targetNameSanitized.startsWith(sanitize(m.name))
             );
@@ -117,8 +142,15 @@ export async function fetchMonsterByIdentity(
             throw new Error(`Monster matching '${cleanName}' not found in the '${cleanSource}' book data.`);
         }
 
-        // Attach resolved token URL for the Quick Spawn feature
-        if (foundMonster.hasToken || foundMonster.tokenUrl === undefined) {
+        // Prefer the token URL embedded in the data (partnered books point at
+        // the homebrew image repo). Only synthesize the official mirror path
+        // for WotC sources; partnered books without a token keep it unset.
+        const embeddedTokenUrl = typeof foundMonster.tokenHref?.url === "string"
+            ? foundMonster.tokenHref.url
+            : undefined;
+        if (embeddedTokenUrl) {
+            foundMonster.tokenUrl = normalizeEmbeddedUrl(embeddedTokenUrl);
+        } else if (!isPartnered) {
             foundMonster.tokenUrl = calculateTokenUrl(foundMonster.name, foundMonster.source);
         }
 

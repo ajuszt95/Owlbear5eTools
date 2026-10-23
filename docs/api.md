@@ -1,9 +1,9 @@
 ---
 type: Module
 title: api.ts — Monster Data API
-description: Fetches D&D 5e monster data from the 5etools-mirror-3 GitHub repository, parses three 5e.tools URL formats, and extracts HP, AC, and token image URLs.
+description: Fetches D&D 5e monster data from the 5etools-mirror-3 and partnered homebrew GitHub repositories, parses three 5e.tools URL formats, and extracts HP, AC, and token image URLs.
 resource: ../src/api.ts
-tags: [api, fetch, monster, 5etools, url-parsing]
+tags: [api, fetch, monster, 5etools, url-parsing, homebrew]
 generated: { by: human:ajuszt95, at: 2026-08-15T09:45:00Z }
 sources:
   - id: api-ts
@@ -15,6 +15,12 @@ sources:
   - id: img-base
     resource: https://github.com/5etools-mirror-3/5etools-img
     title: 5etools-mirror-3 token images
+  - id: homebrew-base
+    resource: https://github.com/TheGiddyLimit/homebrew
+    title: Partnered (non-WotC) 5e.tools data
+  - id: homebrew-img-base
+    resource: https://github.com/TheGiddyLimit/homebrew-img
+    title: Partnered token images
 ---
 
 # api.ts — Monster Data API
@@ -32,7 +38,7 @@ The raw 5e.tools JSON schema, extended with two extra fields added after fetch:
 | `hp` | `{ average?: number }` (optional) | Hit point block |
 | `ac` | `Array<number \| { ac: number }>` (optional) | Armor class block |
 | `size` | `string[]` (optional) | Size codes, e.g. `["M"]` for Medium |
-| `tokenUrl` | `string` (optional, added) | Resolved GitHub raw image URL |
+| `tokenUrl` | `string` (optional, added) | Resolved token image URL (official mirror or `homebrew-img`) |
 | `sourceUrl` | `string` (optional, added) | Original 5e.tools URL supplied by user |
 | `[key]` | `any` | Full stat-block passthrough |
 
@@ -43,9 +49,9 @@ Async function. Entry point for all data loading.
 **Steps:**
 
 1. **Parse URL** — detects one of three 5e.tools URL formats (see below) and extracts `source` and `nameIdentifier`.
-2. **Fetch JSON** — requests `https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data/bestiary/bestiary-{SOURCE}.json`.
-3. **Find monster** — sanitizes both the target name identifier and each monster name (strips all non-alphanumeric characters, lowercases), then exact-matches; falls back to prefix-match.
-4. **Attach helpers** — sets `tokenUrl` via `calculateTokenUrl` and `sourceUrl` from the original URL.
+2. **Resolve source** — looks the source up in `PARTNERED_HOMEBREW_SOURCES` (`src/homebrewSources.ts`). WotC books fetch `https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data/bestiary/bestiary-{SOURCE}.json`; partnered books fetch their file from `TheGiddyLimit/homebrew`.
+3. **Find monster** — sanitizes both the target name identifier and each monster name (strips all non-alphanumeric characters, lowercases), then exact-matches; falls back to prefix-match. For partnered books, candidates are first filtered to the URL's source id so duplicate names from other sources in the same file cannot win.
+4. **Attach helpers** — uses the monster's embedded `tokenHref.url` when present (partnered tokens live in `TheGiddyLimit/homebrew-img`; literal spaces are percent-encoded), otherwise falls back to `calculateTokenUrl` for WotC sources. Sets `sourceUrl` from the original URL.
 
 Throws descriptive `Error` objects on invalid URL, network failure, or no match found.
 
@@ -58,6 +64,20 @@ https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/bestiary/tok
 ```
 
 Name is `encodeURIComponent`-encoded; spaces are preserved for GitHub Raw compatibility.
+
+Only used for WotC sources. Partnered books supply their own token URL in the
+data (`tokenHref.url`); if a partnered monster has no token, `tokenUrl` stays
+unset rather than pointing at a path that does not exist in the official image repo.
+
+### `homebrewSources.ts`
+
+`PARTNERED_HOMEBREW_SOURCES` maps lowercase 5e.tools source ids to repo-relative
+paths in [TheGiddyLimit/homebrew](https://github.com/TheGiddyLimit/homebrew).
+`getPartneredHomebrewUrl(source)` returns the encoded raw URL, or `undefined`
+for WotC sources. The registry is generated from the homebrew repo's
+`_generated/index-meta.json` (partnered entries have `p: 1`) and
+`_generated/index-props.json` (which files contain `monster` data); refresh the
+map when a new partnered book is added.
 
 ### `getMonsterDimensions(size?)`
 
@@ -100,6 +120,13 @@ const monster = await fetchMonsterData("https://5e.tools/bestiary.html#goblin_mm
 // monster.name === "Goblin"
 // monster.source === "MM"
 // monster.tokenUrl === "https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/bestiary/tokens/MM/Goblin.webp"
+
+// Import partnered content (Tome of Beasts 1, 2023 edition)
+const beetle = await fetchMonsterData(
+  "https://5e.tools/bestiary.html#swarm%20of%20prismatic%20beetles_tob1-2023"
+);
+// beetle.source === "ToB1-2023"
+// beetle.tokenUrl === "https://raw.githubusercontent.com/TheGiddyLimit/homebrew-img/main/img/ToB1-2023/bestiary/tokens/Swarm%20of%20Prismatic%20Beetles.webp"
 ```
 
 ## Related concepts

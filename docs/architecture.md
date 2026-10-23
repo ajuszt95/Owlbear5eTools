@@ -54,9 +54,9 @@ ImportPopover / HelpPopover (spawning)
         ▼
 api.ts:fetchMonsterData
   · parses three URL formats (query-param, hash, path)
-  · fetches bestiary-SOURCE.json from 5etools-mirror-3 GitHub
-  · finds monster by sanitized name match
-  · attaches tokenUrl and sourceUrl
+  · fetches official bestiary-SOURCE.json or a partnered homebrew file
+  · finds monster by sanitized name match (source-filtered for homebrew)
+  · attaches tokenUrl (embedded tokenHref for homebrew) and sourceUrl
         │
         ▼
 OBR.scene.items (write)

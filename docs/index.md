@@ -31,7 +31,9 @@ This directory contains the Open Knowledge Format (OKF v0.2) documentation for t
 | Dependency | Role |
 |-----------|------|
 | [@owlbear-rodeo/sdk](https://www.npmjs.com/package/@owlbear-rodeo/sdk) | VTT platform SDK (OBR API) |
-| [5etools-mirror-3](https://github.com/5etools-mirror-3/5etools-src) | Bestiary JSON source |
-| [5etools-img](https://github.com/5etools-mirror-3/5etools-img) | Monster token images |
+| [5etools-mirror-3](https://github.com/5etools-mirror-3/5etools-src) | Bestiary JSON source (WotC content) |
+| [5etools-img](https://github.com/5etools-mirror-3/5etools-img) | Monster token images (WotC content) |
+| [TheGiddyLimit/homebrew](https://github.com/TheGiddyLimit/homebrew) | Bestiary JSON source (partnered content, e.g. Tome of Beasts) |
+| [TheGiddyLimit/homebrew-img](https://github.com/TheGiddyLimit/homebrew-img) | Monster token images (partnered content) |
 | [Stat Bubbles for D&D](https://extensions.owlbear.rodeo/) | HP/AC overlay extension, integrated via shared metadata keys |
 | [Dice+](https://extensions.owlbear.rodeo/) | Optional dice-rolling extension, integrated via broadcast channels |

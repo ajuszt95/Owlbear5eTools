@@ -197,6 +197,79 @@ describe('api.ts', () => {
             expect(result.cr).toBe('2');
         });
 
+        it('should fetch partnered homebrew data for Tome of Beasts 1 (2023)', async () => {
+            const rawTokenHref = 'https://raw.githubusercontent.com/TheGiddyLimit/homebrew-img/main/img/ToB1-2023/bestiary/tokens/Swarm of Prismatic Beetles.webp';
+            const encodedTokenHref = 'https://raw.githubusercontent.com/TheGiddyLimit/homebrew-img/main/img/ToB1-2023/bestiary/tokens/Swarm%20of%20Prismatic%20Beetles.webp';
+            const mockMonster: Monster = {
+                name: 'Swarm of Prismatic Beetles',
+                source: 'ToB1-2023',
+                hp: { average: 60 },
+                ac: [13],
+                size: ['M'],
+                tokenHref: { type: 'external', url: rawTokenHref },
+            };
+
+            (global.fetch as any).mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ monster: [mockMonster] }),
+            });
+
+            const result = await fetchMonsterData('https://5e.tools/bestiary.html#swarm%20of%20prismatic%20beetles_tob1-2023');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                'https://raw.githubusercontent.com/TheGiddyLimit/homebrew/master/creature/Kobold%20Press%3B%20Tome%20of%20Beasts%201%20(2023%20Edition).json'
+            );
+            expect(result.name).toBe('Swarm of Prismatic Beetles');
+            expect(result.source).toBe('ToB1-2023');
+            expect(result.tokenUrl).toBe(encodedTokenHref);
+        });
+
+        it('should not synthesize an official image URL for partnered monsters without a token', async () => {
+            const mockMonster: Monster = {
+                name: 'Agent (Shadowmaster)',
+                source: 'IllriggerRevised',
+                hp: { average: 30 },
+                ac: [14],
+                size: ['M'],
+            };
+
+            (global.fetch as any).mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ monster: [mockMonster] }),
+            });
+
+            const result = await fetchMonsterData('https://5e.tools/bestiary.html#agent%20(shadowmaster)_illriggerrevised');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                'https://raw.githubusercontent.com/TheGiddyLimit/homebrew/master/class/MCDM%20Productions%3B%20The%20Illrigger%20Revised.json'
+            );
+            expect(result.tokenUrl).toBeUndefined();
+        });
+
+        it('should keep using the official mirror for WotC sources', async () => {
+            const mockMonster: Monster = {
+                name: 'Goblin',
+                source: 'MM',
+                hp: { average: 7 },
+                ac: [15],
+                size: ['S'],
+            };
+
+            (global.fetch as any).mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ monster: [mockMonster] }),
+            });
+
+            const result = await fetchMonsterData('https://5e.tools/bestiary.html#goblin_mm');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                'https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data/bestiary/bestiary-mm.json'
+            );
+            expect(result.tokenUrl).toBe(
+                'https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/bestiary/tokens/MM/Goblin.webp'
+            );
+        });
+
         it('should throw if monster not found in list', async () => {
             (global.fetch as any).mockResolvedValueOnce({
                 ok: true,

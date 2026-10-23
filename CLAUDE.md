@@ -44,8 +44,9 @@ index.html#/view?id=ID     → <ViewPopover />   (full stat block viewer, 350×6
 
 ### `src/api.ts`
 - `Monster` interface — the raw 5e.tools JSON schema with an extra `tokenUrl` and `sourceUrl` field attached after fetch.
-- `fetchMonsterData(url)` — parses three 5e.tools URL formats (query param hash, fragment hash, path slug), fetches the correct `bestiary-SOURCE.json` from the 5etools-mirror-3 GitHub repo, finds the monster by sanitized name match, and attaches `tokenUrl`.
-- `calculateTokenUrl(name, source)` — constructs the GitHub raw image URL (`/bestiary/tokens/SOURCE/NAME.webp`).
+- `fetchMonsterData(url)` — parses three 5e.tools URL formats (query param hash, fragment hash, path slug), resolves the source to the official mirror or a partnered homebrew file, finds the monster by sanitized name match, and attaches `tokenUrl`.
+- `calculateTokenUrl(name, source)` — constructs the GitHub raw image URL (`/bestiary/tokens/SOURCE/NAME.webp`) for WotC sources.
+- `PARTNERED_HOMEBREW_SOURCES` / `getPartneredHomebrewUrl(source)` (`src/homebrewSources.ts`) — maps partner source ids (ToB1-2023, FleeMortals, etc.) to `TheGiddyLimit/homebrew` files; partnered monsters carry their own `tokenHref.url`.
 - `getMonsterDimensions(size[])` — maps 5e size codes (T/S/M/L/H/G) to OBR grid multipliers (0.5 → 4).
 - `extractAC(monster)` / `extractHP(monster)` — safe accessors that handle both number and object forms of the `ac`/`hp` fields.
 
