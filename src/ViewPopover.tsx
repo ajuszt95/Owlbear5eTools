@@ -183,6 +183,7 @@ type RollControls = {
     advantage: Advantage;
     critArmed: boolean;
     setCritArmed: (armed: boolean) => void;
+    resetAdvantage: () => void;
 };
 
 const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsRolling, rollControls }: {
@@ -220,6 +221,7 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 if (result.isNat20 && segment.kind === 'attack') rollControls.setCritArmed(true);
                 if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
                 await OBR.notification.show(`${result.formattedText}${critMessage}`, result.variant);
+                rollControls.resetAdvantage();
                 console.log("[RollButton] Basic roll executed:", result);
             } catch (err) {
                 console.error("[RollButton] ERROR during basic roll:", err);
@@ -281,6 +283,8 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
             await OBR.broadcast.sendMessage("dice-plus/roll-request", payload, { destination: 'ALL' });
             // Consume crit like Basic does — otherwise Dice+ stays armed forever.
             if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
+            // Issue #23: one-shot advantage — every dispatched roll resets to Normal.
+            rollControls.resetAdvantage();
             console.log("[RollButton] Roll request sent to Dice+:", rid, payload.diceNotation);
         } catch (err) {
             console.error("[RollButton] ERROR during Dice+ roll:", err);
@@ -616,7 +620,11 @@ export default function ViewPopover() {
         return saved === "adv" || saved === "dis" ? saved : "normal";
     });
     const [critArmed, setCritArmed] = useState(false);
-    const rollControls: RollControls = { advantage: rollAdvantage, critArmed, setCritArmed };
+    const resetAdvantage = () => {
+        setRollAdvantage("normal");
+        localStorage.setItem("5etools-roll-adv", "normal");
+    };
+    const rollControls: RollControls = { advantage: rollAdvantage, critArmed, setCritArmed, resetAdvantage };
 
     useEffect(() => {
         let pingInterval: any;
@@ -728,6 +736,8 @@ export default function ViewPopover() {
             setIsInitiativeRolling(true);
             try {
                 const result = rollInitiativeBasic(monster, undefined, undefined, rollAdvantage);
+                // Issue #23: one-shot advantage — every dispatched roll resets to Normal.
+                resetAdvantage();
                 const finalTotal = initiativeTiebreakTotal(result.total, mod);
                 const shownText = finalTotal === result.total
                     ? result.formattedText
@@ -814,6 +824,8 @@ export default function ViewPopover() {
                 source: EXTENSION_ID,
             };
             await OBR.broadcast.sendMessage("dice-plus/roll-request", payload, { destination: 'ALL' });
+            // Issue #23: one-shot advantage — every dispatched roll resets to Normal.
+            resetAdvantage();
 
             const dicePlusTotal = await totalPromise;
             let finalTotal: number;
