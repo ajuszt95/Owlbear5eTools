@@ -1,10 +1,10 @@
-#!/usr/bin/env node
 /**
  * Build-time monster index generator (issue #4).
  *
  * Fetches data/bestiary/index.json (source → filename map) from the
- * 5etools mirror, downloads each book JSON, and writes one compact record
- * per monster to public/data/monster-index.json:
+ * 5etools mirror, downloads each book JSON, then downloads the partnered
+ * sources listed in src/homebrewSources.json. Writes one compact record per
+ * monster to public/data/monster-index.json:
  *   { meta: { builtAt, count }, monsters: [{ n, s, c, t, z }, ...] }
  *
  * Pure record builders (crToNumberJs / numberToCrJs / formatTypeJs /
@@ -73,6 +73,61 @@ export function monsterToRecord(monster) {
     };
 }
 
+/**
+ * Validates and returns src/homebrewSources.json. Shared with the runtime
+ * resolver so the search index and URL imports cannot drift apart.
+ */
+export function loadHomebrewRegistry(filePath = path.join(root, "src", "homebrewSources.json")) {
+    const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const rawBase = typeof raw?.rawBase === "string" ? raw.rawBase : "";
+    const sources = raw?.sources;
+    if (!rawBase || !sources || typeof sources !== "object" || Array.isArray(sources)) {
+        throw new Error("Unexpected homebrewSources.json shape (expected { rawBase, sources })");
+    }
+    for (const [source, relativePath] of Object.entries(sources)) {
+        if (typeof relativePath !== "string" || !relativePath.endsWith(".json")) {
+            throw new Error(`Invalid homebrew path for source ${source}`);
+        }
+    }
+    return { rawBase, sources };
+}
+
+/** Mirrors getPartneredHomebrewUrl() in src/homebrewSources.ts. */
+export function homebrewUrlFor(rawBase, relativePath) {
+    return `${rawBase}/${relativePath.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+/**
+ * Converts a bestiary `monster` array into index records, skipping malformed
+ * entries and de-duplicating by case-insensitive name+source. `seen` is shared
+ * across official and homebrew files so a partner cannot shadow an official
+ * entry.
+ */
+export function collectMonsterRecords(monsterList, seen = new Set()) {
+    const records = [];
+    if (!Array.isArray(monsterList)) return records;
+    for (const m of monsterList) {
+        if (!m || typeof m.name !== "string" || typeof m.source !== "string") continue;
+        const key = `${m.name.toLowerCase()}\u0000${m.source.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        records.push(monsterToRecord(m));
+    }
+    return records;
+}
+
+/**
+ * Refuses to write a partially built index. A transient fetch failure or an
+ * empty partnered file must fail the build, not silently remove a whole book
+ * from the committed search index.
+ */
+export function assertIndexComplete(failures) {
+    if (!Array.isArray(failures) || failures.length === 0) return;
+    throw new Error(
+        `Refusing to write monster index; ${failures.length} source(s) failed:\n - ${failures.join("\n - ")}`
+    );
+}
+
 function resolveIndexEntries(indexJson) {
     // Expected shape: { "MM": "bestiary-mm.json", ... } (~107 sources).
     // Tolerate a nested wrapper in case upstream changes the envelope.
@@ -99,20 +154,45 @@ async function main() {
     console.log(`Found ${entries.length} sources.`);
 
     const monsters = [];
+    const seen = new Set();
+    const failures = [];
     for (const [source, filename] of entries) {
         const url = `${MIRROR_DATA_BASE}/${filename}`;
         try {
             const data = await fetchJson(url);
             const list = Array.isArray(data?.monster) ? data.monster : [];
-            for (const m of list) {
-                if (!m || typeof m.name !== "string" || typeof m.source !== "string") continue;
-                monsters.push(monsterToRecord(m));
-            }
-            console.log(` - ${source} (${filename}): ${list.length} monsters`);
+            const records = collectMonsterRecords(list, seen);
+            monsters.push(...records);
+            console.log(` - ${source} (${filename}): ${records.length} monsters`);
         } catch (err) {
+            failures.push(`${source} (${filename}): ${err.message}`);
             console.warn(` ! skipping ${source} (${filename}): ${err.message}`);
         }
     }
+
+    console.log("Fetching partnered homebrew sources ...");
+    const homebrew = loadHomebrewRegistry();
+    for (const [source, relativePath] of Object.entries(homebrew.sources)) {
+        const url = homebrewUrlFor(homebrew.rawBase, relativePath);
+        try {
+            const data = await fetchJson(url);
+            const list = Array.isArray(data?.monster) ? data.monster : [];
+            const records = collectMonsterRecords(list, seen);
+            if (records.length === 0) {
+                failures.push(`${source}: no monster records (${relativePath})`);
+                console.warn(` ! partner ${source} produced no monsters`);
+            } else {
+                monsters.push(...records);
+                console.log(` - ${source}: ${records.length} monsters`);
+            }
+        } catch (err) {
+            failures.push(`partner ${source}: ${err.message}`);
+            console.warn(` ! skipping partner ${source}: ${err.message}`);
+        }
+    }
+
+    // A partial download must not overwrite the committed index.
+    assertIndexComplete(failures);
 
     // Deterministic output: sorted by name, then source.
     monsters.sort((a, b) => a.n.toLowerCase().localeCompare(b.n.toLowerCase()) || a.s.localeCompare(b.s));

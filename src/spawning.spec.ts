@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { spawnMonster, spawnMonsterByIdentity, spawnMonsterFromData, spawnMonstersFromData, computeFormationPositions, clampSpawnCount } from './spawning';
+import { spawnMonster, spawnMonsterByIdentity, spawnMonsterFromData, spawnMonstersFromData, computeFormationPositions, clampSpawnCount, applyTokenFallback } from './spawning';
 import { METADATA_KEY, BUBBLES_NAME } from './Background';
 import * as api from './api';
 import OBR from '@owlbear-rodeo/sdk';
@@ -181,6 +181,26 @@ describe('spawning.ts - clampSpawnCount', () => {
     });
 });
 
+describe('spawning.ts - applyTokenFallback', () => {
+    it('fills a missing token URL', () => {
+        const monster = { name: 'Swarm of Giant Mosquitoes', source: 'GriffonsSaddlebag2' };
+        applyTokenFallback(monster);
+        expect(monster.tokenUrl).toMatch(/token-placeholder\.png$/);
+    });
+
+    it('keeps an existing URL when the probe succeeded', () => {
+        const monster = { name: 'Goblin', source: 'MM', tokenUrl: 'https://example.com/goblin.webp' };
+        applyTokenFallback(monster);
+        expect(monster.tokenUrl).toBe('https://example.com/goblin.webp');
+    });
+
+    it('replaces a dead URL when the probe failed', () => {
+        const monster = { name: 'The Demogorgon', source: 'IMR', tokenUrl: 'https://example.com/broken.webp' };
+        applyTokenFallback(monster, true);
+        expect(monster.tokenUrl).toMatch(/token-placeholder\.png$/);
+    });
+});
+
 describe('spawning.ts - spawnMonstersFromData', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -261,5 +281,21 @@ describe('spawning.ts - spawnMonstersFromData', () => {
         const ids = await spawnMonstersFromData(goblin, 280, 280, 0, 'grid');
         expect(ids).toHaveLength(1);
         expect(vi.mocked(OBR.scene.items.addItems).mock.calls[0][0]).toHaveLength(1);
+    });
+
+    it('uses the bundled placeholder when the monster has no tokenUrl', async () => {
+        await spawnMonstersFromData({
+            name: 'Swarm of Giant Mosquitoes',
+            source: 'GriffonsSaddlebag2',
+            hp: { average: 39 },
+            ac: [13],
+            size: ['L'],
+        }, 280, 280, 1, 'row');
+
+        const { buildImage } = await import('@owlbear-rodeo/sdk');
+        const image = vi.mocked(buildImage).mock.calls[0][0] as { url: string; mime: string };
+        expect(image.url).not.toBe('https://5e.tools/img/token/blank.png');
+        expect(image.url).toMatch(/token-placeholder\.png$/);
+        expect(image.mime).toBe('image/png');
     });
 });

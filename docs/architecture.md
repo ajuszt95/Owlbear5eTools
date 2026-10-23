@@ -54,9 +54,10 @@ ImportPopover / HelpPopover (spawning)
         ▼
 api.ts:fetchMonsterData
   · parses three URL formats (query-param, hash, path)
-  · fetches bestiary-SOURCE.json from 5etools-mirror-3 GitHub
-  · finds monster by sanitized name match
-  · attaches tokenUrl and sourceUrl
+  · fetches official bestiary-SOURCE.json or a partnered homebrew file
+  · finds monster by sanitized name match (source-filtered for homebrew)
+  · resolves _copy chains via monsterCopy.ts (templates, _mod, variables)
+  · attaches tokenUrl (embedded tokenHref for homebrew) and sourceUrl
         │
         ▼
 OBR.scene.items (write)
@@ -69,6 +70,18 @@ ViewPopover (read path)
   · renders full stat block
   · pings Dice+ extension; renders clickable dice on reply
 ```
+
+## Monster search index
+
+The action-bar search picker is a second entry point into the same fetch
+pipeline. `<MonsterSearchInput>` loads `public/data/monster-index.json` — a
+static file built by `scripts/build-monster-index.mjs` from the official
+5e.tools mirror plus every partnered source in `src/homebrewSources.json`.
+Picking a row calls `fetchMonsterByIdentity(name, source)`, which resolves the
+same source registry and attaches the token URL exactly like the URL flow.
+
+Monsters with no token art (common in partnered books) spawn with the bundled
+`public/token-placeholder.png` instead of a broken image.
 
 ## Error handling
 
