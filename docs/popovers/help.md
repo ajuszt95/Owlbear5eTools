@@ -25,12 +25,20 @@ restricted-access screen instead of the spawn form.
 
 ## Quick Token Spawn workflow
 
-1. GM pastes a 5e.tools monster URL into the input field.
-2. The component pre-fetches the monster data (via `fetchMonsterData`) to obtain the `tokenUrl`.
+1. GM pastes a 5e.tools monster URL into the input field, or picks a row from the
+   monster search (which loads `public/data/monster-index.json`).
+2. The component pre-fetches the monster data (via `fetchMonsterData` or
+   `fetchMonsterByIdentity`) to obtain the `tokenUrl`; monsters without token art use
+   the bundled `public/token-placeholder.png`.
 3. The token image is loaded into a hidden `<img>` element to obtain its **natural pixel
    dimensions** (`naturalWidth`, `naturalHeight`).
-4. On "Spawn Token" click, calls `spawnMonster(url, naturalWidth, naturalHeight)`.
-5. On success, shows a confirmation message with the monster name.
+4. On "Spawn Token" click, calls
+   `spawnMonstersFromData(monster, naturalWidth, naturalHeight, count, "row")`
+   with the already-fetched monster (no second book-JSON fetch).
+5. If the image probe fails, the token URL is replaced with the bundled
+   placeholder and the token still spawns at 300×300; the panel shows a warning
+   instead of a success message.
+6. On success, shows a confirmation message with the monster name.
 
 Pre-fetching the image dimensions is essential for the DPI-calibration formula in
 [spawning.ts](../spawning.md).

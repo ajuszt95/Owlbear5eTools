@@ -74,10 +74,20 @@ unset rather than pointing at a path that does not exist in the official image r
 `PARTNERED_HOMEBREW_SOURCES` maps lowercase 5e.tools source ids to repo-relative
 paths in [TheGiddyLimit/homebrew](https://github.com/TheGiddyLimit/homebrew).
 `getPartneredHomebrewUrl(source)` returns the encoded raw URL, or `undefined`
-for WotC sources. The registry is generated from the homebrew repo's
-`_generated/index-meta.json` (partnered entries have `p: 1`) and
-`_generated/index-props.json` (which files contain `monster` data); refresh the
-map when a new partnered book is added.
+for WotC sources. The registry lives in `src/homebrewSources.json` so the
+runtime resolver and the monster-index build script share one source of truth.
+It is generated from the homebrew repo's `_generated/index-meta.json`
+(partnered entries have `p: 1`) and `_generated/index-props.json` (which files
+contain `monster` data); refresh the JSON when a new partnered book is added,
+then run `npm run build:index`.
+
+### `tokenFallback.ts`
+
+`getFallbackTokenUrl()` returns the absolute URL of the bundled
+`public/token-placeholder.png`, resolved against the extension origin (it falls
+back to a root-relative path outside the browser). `spawning.ts` and
+`HelpPopover.tsx` use it when a monster has no `tokenUrl`, replacing the dead
+`https://5e.tools/img/token/blank.png` fallback.
 
 ### `getMonsterDimensions(size?)`
 
@@ -128,6 +138,15 @@ const beetle = await fetchMonsterData(
 // beetle.source === "ToB1-2023"
 // beetle.tokenUrl === "https://raw.githubusercontent.com/TheGiddyLimit/homebrew-img/main/img/ToB1-2023/bestiary/tokens/Swarm%20of%20Prismatic%20Beetles.webp"
 ```
+
+## Monster search index
+
+The built-in monster search reads `public/data/monster-index.json`, generated
+by `npm run build:index` (`scripts/build-monster-index.mjs`). The script
+downloads every official bestiary file plus every partnered source in
+`src/homebrewSources.json`, de-duplicates by exact name+source, and sorts by
+name. The runtime fetches the JSON once and scans it in memory, so search stays
+entirely client-side.
 
 ## Related concepts
 

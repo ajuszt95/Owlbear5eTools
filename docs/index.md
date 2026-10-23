@@ -17,7 +17,7 @@ This directory contains the Open Knowledge Format (OKF v0.2) documentation for t
 |---------|------|-------------|
 | [overview](overview.md) | Project Overview | What the extension is, who it is for, and how to install it. |
 | [architecture](architecture.md) | Architecture | Single-page app routing, component responsibilities, and data-flow. |
-| [api](api.md) | Module | Monster data fetching, URL parsing, sizing, and stat extraction. |
+| [api](api.md) | Module | Monster data fetching, URL parsing, sizing, stat extraction, and the search index. |
 | [spawning](spawning.md) | Module | Token spawning logic and DPI calibration. |
 | [renderer](renderer/index.md) | Module | 5e.tools markup tokenizer and plain-text stripper. |
 | [popovers](popovers/index.md) | Module Group | HelpPopover, ImportPopover, and ViewPopover components. |
