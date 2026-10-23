@@ -51,7 +51,8 @@ Async function. Entry point for all data loading.
 1. **Parse URL** — detects one of three 5e.tools URL formats (see below) and extracts `source` and `nameIdentifier`.
 2. **Resolve source** — looks the source up in `PARTNERED_HOMEBREW_SOURCES` (`src/homebrewSources.ts`). WotC books fetch `https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data/bestiary/bestiary-{SOURCE}.json`; the six Plane Shift sources go through `getOfficialBestiaryFilename()`, which maps them to the mirror's hyphenated names (`PSA` → `bestiary-ps-a.json`). Partnered books fetch their file from `TheGiddyLimit/homebrew`.
 3. **Find monster** — sanitizes both the target name identifier and each monster name (strips all non-alphanumeric characters, lowercases), then exact-matches; falls back to prefix-match. For partnered books, candidates are first filtered to the URL's source id so duplicate names from other sources in the same file cannot win.
-4. **Attach helpers** — uses the monster's embedded `tokenHref.url` when present (partnered tokens live in `TheGiddyLimit/homebrew-img`; literal spaces are percent-encoded), otherwise falls back to `calculateTokenUrl` for WotC sources. Sets `sourceUrl` from the original URL.
+4. **Resolve `_copy` chains** — many 5e.tools entries (Plane Shift, named NPCs, template variants) are `_copy` references to another creature rather than full stat blocks. `src/monsterCopy.ts` loads the referenced creature (from the same book, the official mirror, or a partnered file), applies 5e.tools templates from `data/bestiary/template.json`, and replays the `_mod` operations (`replaceTxt`, `replaceArr`, `appendArr`, `addSpells`, …). Cycles and missing bases are handled without failing the import.
+5. **Attach helpers** — uses the monster's embedded `tokenHref.url` when present (partnered tokens live in `TheGiddyLimit/homebrew-img`; literal spaces are percent-encoded), otherwise falls back to `calculateTokenUrl` for WotC sources. Sets `sourceUrl` from the original URL.
 
 Throws descriptive `Error` objects on invalid URL, network failure, or no match found.
 
@@ -80,6 +81,25 @@ It is generated from the homebrew repo's `_generated/index-meta.json`
 (partnered entries have `p: 1`) and `_generated/index-props.json` (which files
 contain `monster` data); refresh the JSON when a new partnered book is added,
 then run `npm run build:index`.
+
+### `monsterCopy.ts`
+
+`resolveMonsterCopy(monster, options)` walks a `_copy` chain and returns a full
+stat block. It is a focused port of 5e.tools' `DataUtil.generic.copyApplier`
+covering every `_mod` mode present in the official and partnered bestiary data:
+
+- `replaceTxt`, `replaceName`, `appendStr`, `setProp`
+- `prependArr`, `appendArr`, `appendIfNotExistsArr`, `insertArr`,
+  `removeArr`, `renameArr`, `replaceArr`, `replaceOrAppendArr`
+- `addSenses`, `addSaves`, `addSkills`, `addSpells`, `replaceSpells`,
+  `removeSpells`
+- template `apply._root` / `apply._mod`, including `<$variable$>` placeholders
+  (`spell_dc__*`, `to_hit__*`, `damage_*`, `title_short_name`, …)
+
+Book files and `template.json` are cached per import, so a chain inside one
+book costs a single download. Unknown modes are ignored rather than throwing,
+and a missing base leaves the entry as-is so one bad reference cannot block an
+otherwise valid import.
 
 ### `tokenFallback.ts`
 

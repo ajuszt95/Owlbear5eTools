@@ -1,5 +1,6 @@
 import { crToNumber, scaleMonster } from "./utils/scaleCreature";
 import { getPartneredHomebrewUrl } from "./homebrewSources";
+import { resolveMonsterCopy, type MonsterTemplate } from "./monsterCopy";
 
 export interface Monster {
     name: string;
@@ -102,6 +103,77 @@ export interface FetchByIdentityOptions {
     sourceUrl?: string;
 }
 
+export interface BestiaryBook {
+    monsterList: Monster[];
+    isPartnered: boolean;
+}
+
+function sanitizeMonsterName(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+async function fetchBestiaryBook(source: string): Promise<BestiaryBook> {
+    const cleanSource = source.trim();
+    const homebrewUrl = getPartneredHomebrewUrl(cleanSource);
+    const isPartnered = homebrewUrl !== undefined;
+    const jsonUrl = homebrewUrl ?? `${GITHUB_MIRROR_BASE}/${getOfficialBestiaryFilename(cleanSource)}`;
+
+    const response = await fetch(jsonUrl);
+    if (!response.ok) {
+        const sourceKind = isPartnered ? "partnered homebrew" : "Bestiary";
+        throw new Error(`Failed to fetch ${sourceKind} data for book: ${cleanSource}. (Status ${response.status})`);
+    }
+
+    const data = await response.json();
+    const monsterList: Monster[] = data.monster;
+    if (!monsterList || monsterList.length === 0) {
+        throw new Error(`No monsters found in book data for source: ${cleanSource}`);
+    }
+
+    return { monsterList, isPartnered };
+}
+
+function findMonsterInList(
+    monsterList: Monster[],
+    name: string,
+    source: string,
+    isPartnered: boolean
+): Monster | undefined {
+    // A partnered file can host more than one source id, so prefer
+    // entries that match the source from the URL before matching names.
+    const sourceMatches = isPartnered
+        ? monsterList.filter((m) => m.source.toLowerCase() === source.trim().toLowerCase())
+        : [];
+    const candidates = sourceMatches.length > 0 ? sourceMatches : monsterList;
+
+    const targetNameSanitized = sanitizeMonsterName(name);
+    let foundMonster = candidates.find((m) => sanitizeMonsterName(m.name) === targetNameSanitized);
+
+    // Fallback matching if exact sanitized match fails
+    if (!foundMonster) {
+        foundMonster = candidates.find(
+            (m) =>
+                sanitizeMonsterName(m.name).startsWith(targetNameSanitized) ||
+                targetNameSanitized.startsWith(sanitizeMonsterName(m.name))
+        );
+    }
+
+    return foundMonster;
+}
+
+async function loadMonsterTemplates(): Promise<MonsterTemplate[]> {
+    try {
+        const response = await fetch(`${GITHUB_MIRROR_BASE}/template.json`);
+        if (!response.ok) return [];
+        const data = await response.json();
+        return Array.isArray(data.monsterTemplate) ? data.monsterTemplate : [];
+    } catch {
+        // Templates only affect a subset of copied monsters; a template
+        // outage should not block an otherwise valid import.
+        return [];
+    }
+}
+
 export async function fetchMonsterByIdentity(
     name: string,
     source: string,
@@ -116,51 +188,39 @@ export async function fetchMonsterByIdentity(
     try {
         // Partnered books (Tome of Beasts, Flee Mortals, etc.) live in the
         // community homebrew repo; WotC books live in the official mirror.
-        const homebrewUrl = getPartneredHomebrewUrl(cleanSource);
-        const isPartnered = homebrewUrl !== undefined;
-        const jsonUrl = homebrewUrl ?? `${GITHUB_MIRROR_BASE}/${getOfficialBestiaryFilename(cleanSource)}`;
-        const response = await fetch(jsonUrl);
+        // Cache per import so a _copy chain that stays inside one book does
+        // not download it twice.
+        const bookCache = new Map<string, Promise<BestiaryBook>>();
+        const loadBook = (bookSource: string): Promise<BestiaryBook> => {
+            const key = bookSource.trim().toLowerCase();
+            let promise = bookCache.get(key);
+            if (!promise) {
+                promise = fetchBestiaryBook(bookSource);
+                bookCache.set(key, promise);
+            }
+            return promise;
+        };
 
-        if (!response.ok) {
-            const sourceKind = isPartnered ? "partnered homebrew" : "Bestiary";
-            throw new Error(`Failed to fetch ${sourceKind} data for book: ${cleanSource}. (Status ${response.status})`);
-        }
+        const { monsterList, isPartnered } = await loadBook(cleanSource);
 
-        const data = await response.json();
-        const monsterList: Monster[] = data.monster;
-
-        if (!monsterList || monsterList.length === 0) {
-            throw new Error(`No monsters found in book data for source: ${cleanSource}`);
-        }
-
-        // A partnered file can host more than one source id, so prefer
-        // entries that match the source from the URL before matching names.
-        const sourceMatches = isPartnered
-            ? monsterList.filter((m) => m.source.toLowerCase() === cleanSource.toLowerCase())
-            : [];
-        const candidates = sourceMatches.length > 0 ? sourceMatches : monsterList;
-
-        // Find the specific monster
-        // Use a more relaxed sanitizer for external URLs which might have complex characters
-        const sanitize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const targetNameSanitized = sanitize(cleanName);
-
-        let foundMonster = candidates.find((m) =>
-            sanitize(m.name) === targetNameSanitized ||
-            targetNameSanitized === sanitize(m.name)
-        );
-
-        // Fallback matching if exact sanitized match fails
-        if (!foundMonster) {
-            foundMonster = candidates.find(m =>
-                sanitize(m.name).startsWith(targetNameSanitized) ||
-                targetNameSanitized.startsWith(sanitize(m.name))
-            );
-        }
+        let foundMonster = findMonsterInList(monsterList, cleanName, cleanSource, isPartnered);
 
         if (!foundMonster) {
             throw new Error(`Monster matching '${cleanName}' not found in the '${cleanSource}' book data.`);
         }
+
+        // 5e.tools stores many creatures as `_copy` references (Plane Shift,
+        // named NPCs, template variants). Resolve the chain before exposing
+        // HP/AC/actions, otherwise copied monsters import with no stat block.
+        let templatesPromise: Promise<MonsterTemplate[]> | undefined;
+        const getTemplates = () => (templatesPromise ??= loadMonsterTemplates());
+        foundMonster = (await resolveMonsterCopy(foundMonster, {
+            loadMonster: async (baseName, baseSource) => {
+                const book = await loadBook(baseSource);
+                return findMonsterInList(book.monsterList, baseName, baseSource, book.isPartnered);
+            },
+            loadTemplates: getTemplates,
+        })) as Monster;
 
         // Prefer the token URL embedded in the data (partnered books point at
         // the homebrew image repo). Only synthesize the official mirror path

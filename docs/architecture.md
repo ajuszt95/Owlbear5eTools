@@ -56,6 +56,7 @@ api.ts:fetchMonsterData
   · parses three URL formats (query-param, hash, path)
   · fetches official bestiary-SOURCE.json or a partnered homebrew file
   · finds monster by sanitized name match (source-filtered for homebrew)
+  · resolves _copy chains via monsterCopy.ts (templates, _mod, variables)
   · attaches tokenUrl (embedded tokenHref for homebrew) and sourceUrl
         │
         ▼
