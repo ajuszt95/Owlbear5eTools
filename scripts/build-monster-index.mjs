@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Build-time monster index generator (issue #4).
  *
