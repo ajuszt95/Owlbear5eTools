@@ -357,16 +357,16 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
     );
 };
 
-const renderMarkup = (text: string, active: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls) => {
+const renderMarkup = (text: string, active: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, action?: string) => {
     const segments = render5etoolsText(text);
     return segments.map((s, i) => (
         <span key={i}>
-            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} rollControls={rollControls} />}
+            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} rollControls={rollControls} action={action} />}
         </span>
     ));
 };
 
-const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, depth = 0): React.ReactNode => {
+const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, depth = 0, action?: string): React.ReactNode => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
         if (e == null) return null;
@@ -375,7 +375,7 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         if (typeof e === "string") {
             return (
                 <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>
-                    {renderMarkup(e, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                    {renderMarkup(e, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}
                 </p>
             );
         }
@@ -388,8 +388,8 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         if (type === "entries" || (!type && e.name && e.entries)) {
             return (
                 <div key={i} style={{ marginBottom: "6px" }}>
-                    <strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}. </strong>
-                    {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth)}
+                    <strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}. </strong>
+                    {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth, e.name || action)}
                 </div>
             );
         }
@@ -399,20 +399,20 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
             if (e.name && e.entry) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}.</strong></em>{" "}
-                        {renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}.</strong></em>{" "}
+                        {renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, e.name || action)}
                     </div>
                 );
             }
             if (e.name && e.entries) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}.</strong></em>{" "}
-                        {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}.</strong></em>{" "}
+                        {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth, e.name || action)}
                     </div>
                 );
             }
-            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</p>;
+            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}</p>;
         }
 
         // List
@@ -423,7 +423,7 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                 <ul key={i} style={{ margin: "4px 0", paddingLeft: isHangNotitle ? "0" : "18px", listStyle: isHangNotitle ? "none" : "disc" }}>
                     {items.map((it: any, j: number) => (
                         <li key={j} style={{ marginBottom: "3px" }}>
-                            {renderEntries([it], activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1)}
+                            {renderEntries([it], activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1, action)}
                         </li>
                     ))}
                 </ul>
@@ -443,10 +443,10 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                 }}>
                     {e.name && (
                         <div style={{ fontWeight: "bold", color: "#58180D", marginBottom: "4px" }}>
-                            {renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                            {renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}
                         </div>
                     )}
-                    {e.entries && renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1)}
+                    {e.entries && renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1, e.name || action)}
                 </div>
             );
         }
@@ -458,14 +458,14 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
             const rows: any[][] = e.rows || [];
             return (
                 <div key={i} style={{ margin: "8px 0", overflowX: "auto" }}>
-                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
+                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}</div>}
                     <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>
                         {colLabels.length > 0 && (
                             <thead>
                                 <tr>
                                     {colLabels.map((col: string, j: number) => (
                                         <th key={j} style={{ border: "1px solid #ccc", padding: "3px 6px", background: "#e8d5b7", textAlign: "left" }}>
-                                             {renderMarkup(col, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                                             {renderMarkup(col, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}
                                         </th>
                                     ))}
                                 </tr>
@@ -477,9 +477,9 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                                     {row.map((cell: any, k: number) => (
                                         <td key={k} style={{ border: "1px solid #ccc", padding: "3px 6px" }}>
                                             {typeof cell === "string"
-                                                ? renderMarkup(cell, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)
+                                                ? renderMarkup(cell, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)
                                                 : typeof cell === "object" && cell?.type === "cell"
-                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)
+                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)
                                                     : String(cell ?? "")}
                                         </td>
                                     ))}
@@ -492,8 +492,8 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         }
 
         // Fallback — try to render entries/entry if present
-        if (e.entries) return renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth);
-        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</p>;
+        if (e.entries) return renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth, action);
+        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}</p>;
 
         return null;
     });
