@@ -47,6 +47,14 @@ export interface GameLogIntent {
     hidden: boolean;
 }
 
+export interface DicePlusResult {
+    totalValue?: number;
+    groups?: Array<{
+        diceType?: string;
+        dice?: Array<{ value?: number; kept?: boolean; diceType?: string }>;
+    }>;
+}
+
 const TYPE_BY_SEGMENT: Record<string, GameLogRollType> = {
     attack: "attack",
     damage: "damage",
@@ -117,4 +125,71 @@ export function buildRollFromBasicResult(
         dice,
         outcome: result.isNat20 ? "critical" : result.isNat1 ? "fumble" : null,
     };
+}
+
+export function buildRollFromDicePlusResult(
+    result: DicePlusResult,
+    intent: GameLogIntent,
+): GameLogRoll | null {
+    const modifier = flatModifier(intent.formula);
+    const keepMatch = intent.formula.match(/(\d*)d20(kh|kl)(\d+)/i);
+    const keep: GameLogDiceTerm["keep"] = keepMatch
+        ? {
+            mode: keepMatch[2].toLowerCase() === "kh" ? "highest" : "lowest",
+            count: Number(keepMatch[3]),
+        }
+        : undefined;
+
+    const groups = result.groups ?? [];
+    const usableGroups: GameLogDiceTerm[] = [];
+
+    for (const group of groups) {
+        const diceType = group.diceType ?? group.dice?.[0]?.diceType;
+        const faces = Number(diceType?.replace("d", ""));
+        if (!Number.isFinite(faces) || faces <= 0) continue;
+
+        const values = (group.dice ?? []).map((die) => Number(die.value));
+        if (values.some((value) => !Number.isFinite(value))) continue;
+
+        const results = (group.dice ?? []).map((die) => ({
+            value: Number(die.value),
+            active: die.kept !== false,
+        }));
+
+        usableGroups.push({
+            faces,
+            count: values.length,
+            results,
+            keep: faces === 20 ? keep : undefined,
+        });
+    }
+
+    if (usableGroups.length === 0) return null;
+
+    const totalValue = result.totalValue;
+    const total =
+        typeof totalValue === "number" && Number.isFinite(totalValue)
+            ? totalValue
+            : usableGroups.reduce((sum, group) => sum + group.results.filter((die) => die.active).reduce((sum, die) => sum + die.value, 0), 0) + modifier;
+
+    const d20 = usableGroups.find((group) => group.faces === 20);
+    const natural = d20?.results.find((die) => die.active)?.value;
+    const outcome =
+        natural === 20 ? "critical" : natural === 1 ? "fumble" : null;
+
+    return {
+        type: rollTypeForSegment(intent.segmentKind),
+        kind: rollKindFor(intent.advantage, intent.segmentKind, intent.critArmed),
+        formula: intent.formula,
+        total,
+        constant: modifier,
+        dice: usableGroups,
+        outcome,
+    };
+}
+
+function flatModifier(formula: string): number {
+    const stripped = (formula || '').replace(/\s+/g, '').replace(/\d*d\d+/gi, '').replace(/k[hl]\d+/gi, '');
+    const terms = stripped.match(/[+-]\d+/g) ?? [];
+    return terms.reduce((sum, term) => sum + Number(term), 0);
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildRollFromBasicResult, rollKindFor, rollTypeForSegment, type GameLogIntent } from "./gameLog";
+import {
+    buildRollFromBasicResult,
+    buildRollFromDicePlusResult,
+    rollKindFor,
+    rollTypeForSegment,
+    type GameLogIntent,
+} from "./gameLog";
 import type { RollResult } from "./diceRoller";
 
 const intent = (over: Partial<GameLogIntent> = {}): GameLogIntent => ({
@@ -74,5 +80,47 @@ describe("buildRollFromBasicResult", () => {
         const roll = buildRollFromBasicResult(result, intent({ segmentKind: "damage", critArmed: true, formula: "4d6+3" }));
         expect(roll.kind).toBe("critical");
         expect(roll.dice[0].count).toBe(4);
+    });
+});
+
+describe("buildRollFromDicePlusResult", () => {
+    const attack = { totalValue: 21, groups: [{ diceType: "d20", dice: [{ value: 17, kept: true }, { value: 3, kept: false }] }] };
+
+    it("translates a two-d20 advantage result", () => {
+        expect(buildRollFromDicePlusResult(attack, intent({ advantage: "adv", formula: "2d20kh1+4" }))).toEqual({
+            type: "attack", kind: "advantage", formula: "2d20kh1+4", total: 21, constant: 4,
+            dice: [{ faces: 20, count: 2, results: [{ value: 17, active: true }, { value: 3, active: false }], keep: { mode: "highest", count: 1 } }],
+            outcome: null,
+        });
+    });
+
+    it("treats dice without a kept flag as active", () => {
+        const roll = buildRollFromDicePlusResult(
+            { totalValue: 7, groups: [{ diceType: "d6", dice: [{ value: 5 }] }] },
+            intent({ segmentKind: "damage", formula: "1d6+2" }),
+        );
+        expect(roll?.dice[0].results).toEqual([{ value: 5, active: true }]);
+    });
+
+    it("falls back to active dice plus the constant when totalValue is missing", () => {
+        const roll = buildRollFromDicePlusResult(
+            { groups: [{ diceType: "d6", dice: [{ value: 5, kept: true }] }] },
+            intent({ segmentKind: "damage", formula: "1d6+2" }),
+        );
+        expect(roll?.total).toBe(7);
+        expect(roll?.constant).toBe(2);
+    });
+
+    it("reports a natural 20 on a single d20", () => {
+        const roll = buildRollFromDicePlusResult(
+            { totalValue: 24, groups: [{ diceType: "d20", dice: [{ value: 20, kept: true }] }] },
+            intent({ formula: "1d20+4" }),
+        );
+        expect(roll?.outcome).toBe("critical");
+    });
+
+    it("returns null when Dice+ sent no dice", () => {
+        expect(buildRollFromDicePlusResult({ totalValue: 4 }, intent())).toBeNull();
+        expect(buildRollFromDicePlusResult({ groups: [] }, intent())).toBeNull();
     });
 });
