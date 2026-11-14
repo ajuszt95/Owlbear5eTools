@@ -72,7 +72,10 @@ index.html#/view?id=ID     → <ViewPopover />   (full stat block viewer, 350×6
 
 ### `src/utils/renderer.ts`
 - `render5etoolsText(text)` — tokenizer for 5e.tools `{@tag value}` markup. Returns an array of `RenderSegment` objects (`{ type: 'text' }` or `{ type: 'roll', formula, label }`). Handles: `@atk`, `@hit`, `@damage`, `@dice`, `@dc`, `@sav`, `@recharge`, `@scaleDice`, and several action-result tags.
-- `render5etoolsPlainText(text)` — strips markup to plain string (used in metadata fields and display strings like AC conditions).
+- `render5etoolsPlainText(text)` - strips markup to plain string (used in metadata fields and display strings like AC conditions).
+
+### `src/utils/gameLog.ts`
+- Mirrors stat-block rolls into the DDB Game Log extension on `com.ddbgamelog/api/roll` (`destination: 'LOCAL'`), schema v1. Basic rolls are translated from `RollResult`; Dice+ rolls are translated from the async `roll-result` payload via a `rollId → intent` registry in `ViewPopover`. Private rolls (`rollTarget === 'self'`) carry `hidden: true`. Payloads over 15 kB are dropped, never truncated.
 
 ---
 
