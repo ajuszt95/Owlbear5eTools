@@ -4,6 +4,7 @@ import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID, INITIATIVE_METADATA_K
 import { render5etoolsText, render5etoolsPlainText, type RenderSegment } from "./utils/renderer";
 import { applyAdvantageNotation, critFormula, evaluateRoll, keptD20FromDicePlus, type Advantage } from "./utils/diceRoller";
 import { dexModifier, initiativeNotation, initiativeTiebreakTotal, rollInitiativeBasic, writeInitiative } from "./initiative";
+import { useGameLog } from "./utils/gameLogContext";
 import { APP_VERSION } from "./version";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -186,7 +187,7 @@ type RollControls = {
     resetAdvantage: () => void;
 };
 
-const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsRolling, rollControls }: {
+const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action }: {
     segment: Extract<RenderSegment, { type: 'roll' }>;
     active: boolean;
     rollTarget: string;
@@ -194,7 +195,10 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
     isRolling: boolean;
     setIsRolling: (v: boolean) => void;
     rollControls: RollControls;
+    action?: string;
 }) => {
+    const gameLog = useGameLog();
+
     // Per-button debounce — prevents accidental double-clicks on the same button.
     const lastRollTime = useRef(0);
 
@@ -222,6 +226,16 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
                 await OBR.notification.show(`${result.formattedText}${critMessage}`, result.variant);
                 rollControls.resetAdvantage();
+                const rollId = "gl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+                const glIntent = {
+                    action: action || segment.label || "Roll",
+                    segmentKind: segment.kind,
+                    advantage,
+                    critArmed: isDamage && rollControls.critArmed,
+                    formula: rollFormula,
+                    hidden: true,
+                };
+                try { gameLog?.logBasic(rollId, result, glIntent); } catch { /* logging must never break a roll */ }
                 console.log("[RollButton] Basic roll executed:", result);
             } catch (err) {
                 console.error("[RollButton] ERROR during basic roll:", err);
@@ -253,6 +267,15 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 timestamp: ts,
                 source: EXTENSION_ID,
             };
+
+            gameLog?.registerPending(rid, {
+                action: action || segment.label || "Roll",
+                segmentKind: segment.kind,
+                advantage,
+                critArmed: isDamage && rollControls.critArmed,
+                formula: payload.diceNotation,
+                hidden: rollTarget === 'self',
+            });
 
             // Attack rolls: watch for the Dice+ result to auto-arm crit on Nat20.
             // Dice+ reports kept/dropped dice in result.groups — the kept d20
