@@ -605,6 +605,7 @@ const AbilityTable = ({ monster, active, rollTarget, rollEngine, isRolling, setI
                             isRolling={isRolling}
                             setIsRolling={setIsRolling}
                             rollControls={rollControls}
+                            action={`${ab.toUpperCase()} Check`}
                         />)
                     </div>
                 </div>
@@ -1026,6 +1027,7 @@ export default function ViewPopover() {
                         isRolling={isRolling}
                         setIsRolling={setIsRolling}
                         rollControls={rollControls}
+                        action={`${k.toUpperCase()} Save`}
                     />
                 </span>
             ))}
@@ -1046,6 +1048,7 @@ export default function ViewPopover() {
                         isRolling={isRolling}
                         setIsRolling={setIsRolling}
                         rollControls={rollControls}
+                        action={`${k} Check`}
                     />
                 </span>
             ))}
