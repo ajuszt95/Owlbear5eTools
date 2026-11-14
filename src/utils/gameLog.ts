@@ -1,3 +1,4 @@
+import OBR from "@owlbear-rodeo/sdk";
 import type { Advantage, RollResult } from "./diceRoller";
 import type { RollKind } from "./renderer";
 
@@ -192,4 +193,72 @@ function flatModifier(formula: string): number {
     const stripped = (formula || '').replace(/\s+/g, '').replace(/\d*d\d+/gi, '').replace(/k[hl]\d+/gi, '');
     const terms = stripped.match(/[+-]\d+/g) ?? [];
     return terms.reduce((sum, term) => sum + Number(term), 0);
+}
+
+export const GAMELOG_CHANNEL = "com.ddbgamelog/api/roll";
+export const GAMELOG_VIA = "5e Tools";
+export const GAMELOG_MAX_BYTES = 15000;
+
+export interface GameLogPayload {
+    v: 1;
+    rollId: string;
+    via: string;
+    hidden?: boolean;
+    entity: GameLogEntity;
+    action: string;
+    rolls: GameLogRoll[];
+}
+
+export function buildGameLogPayload(args: {
+    rollId: string;
+    entity: GameLogEntity;
+    intent: GameLogIntent;
+    rolls: GameLogRoll[];
+}): GameLogPayload | null {
+    if (args.rolls.length === 0) return null;
+
+    const payload: GameLogPayload = {
+        v: 1,
+        rollId: args.rollId,
+        via: GAMELOG_VIA,
+        entity: {
+            id: args.entity.id,
+            type: args.entity.type,
+            name: args.entity.name.slice(0, 128),
+        },
+        action: (args.intent.action || "Roll").slice(0, 256),
+        rolls: args.rolls.slice(0, 10),
+    };
+
+    if (args.entity.avatarUrl?.startsWith("https://")) {
+        payload.entity.avatarUrl = args.entity.avatarUrl;
+    }
+
+    if (args.intent.hidden) {
+        payload.hidden = true;
+    }
+
+    const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
+    if (bytes > GAMELOG_MAX_BYTES) return null;
+
+    return payload;
+}
+
+export function isExpiredPending(
+    entry: { at: number },
+    now: number,
+    ttlMs = 30_000,
+): boolean {
+    return now - entry.at > ttlMs;
+}
+
+export async function sendGameLogRoll(payload: GameLogPayload): Promise<boolean> {
+    try {
+        await OBR.broadcast.sendMessage(GAMELOG_CHANNEL, payload, {
+            destination: "LOCAL",
+        });
+        return true;
+    } catch {
+        return false;
+    }
 }

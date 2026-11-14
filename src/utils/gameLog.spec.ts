@@ -1,12 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import OBR from "@owlbear-rodeo/sdk";
 import {
+    buildGameLogPayload,
     buildRollFromBasicResult,
     buildRollFromDicePlusResult,
+    isExpiredPending,
     rollKindFor,
     rollTypeForSegment,
+    sendGameLogRoll,
     type GameLogIntent,
+    type GameLogRoll,
 } from "./gameLog";
 import type { RollResult } from "./diceRoller";
+
+vi.mock("@owlbear-rodeo/sdk", () => ({
+    default: { broadcast: { sendMessage: vi.fn().mockResolvedValue(undefined) } },
+}));
 
 const intent = (over: Partial<GameLogIntent> = {}): GameLogIntent => ({
     action: "Scimitar", segmentKind: "attack", advantage: "normal", critArmed: false,
@@ -122,5 +131,66 @@ describe("buildRollFromDicePlusResult", () => {
     it("returns null when Dice+ sent no dice", () => {
         expect(buildRollFromDicePlusResult({ totalValue: 4 }, intent())).toBeNull();
         expect(buildRollFromDicePlusResult({ groups: [] }, intent())).toBeNull();
+    });
+});
+
+describe("buildGameLogPayload", () => {
+    const entity = { id: "token-1", type: "monster" as const, name: "Goblin" };
+    const roll = buildRollFromBasicResult(basic(), intent());
+
+    it("builds a v1 payload for the ddb channel", () => {
+        const payload = buildGameLogPayload({ rollId: "roll_1", entity, intent: intent(), rolls: [roll] });
+        expect(payload).toMatchObject({
+            v: 1, rollId: "roll_1", via: "5e Tools",
+            entity: { id: "token-1", type: "monster", name: "Goblin" },
+            action: "Scimitar", rolls: [roll],
+        });
+        expect(payload?.hidden).toBeUndefined();
+    });
+
+    it("marks private rolls hidden", () => {
+        const payload = buildGameLogPayload({ rollId: "r", entity, intent: intent({ hidden: true }), rolls: [roll] });
+        expect(payload?.hidden).toBe(true);
+    });
+
+    it("truncates action and entity name to the schema limits", () => {
+        const payload = buildGameLogPayload({
+            rollId: "r",
+            entity: { ...entity, name: "n".repeat(300) },
+            intent: intent({ action: "a".repeat(300) }),
+            rolls: [roll],
+        });
+        expect(payload?.action).toHaveLength(256);
+        expect(payload?.entity.name).toHaveLength(128);
+    });
+
+    it("drops an oversized payload entirely", () => {
+        const big: GameLogRoll = { ...roll, dice: [{ faces: 6, count: 4000, results: Array.from({ length: 4000 }, () => ({ value: 3, active: true })) }] };
+        expect(buildGameLogPayload({ rollId: "r", entity, intent: intent(), rolls: [big] })).toBeNull();
+    });
+
+    it("returns null when there are no rolls", () => {
+        expect(buildGameLogPayload({ rollId: "r", entity, intent: intent(), rolls: [] })).toBeNull();
+    });
+});
+
+describe("isExpiredPending", () => {
+    it("expires entries older than the ttl", () => {
+        expect(isExpiredPending({ at: 1_000 }, 32_000)).toBe(true);
+        expect(isExpiredPending({ at: 1_000 }, 31_000)).toBe(false);
+        expect(isExpiredPending({ at: 0 }, 5_000, 1_000)).toBe(true);
+    });
+});
+
+describe("sendGameLogRoll", () => {
+    it("broadcasts to the local ddb channel", async () => {
+        const payload = buildGameLogPayload({ rollId: "r", entity: { id: "t", type: "monster", name: "Goblin" }, intent: intent(), rolls: [buildRollFromBasicResult(basic(), intent())] })!;
+        await sendGameLogRoll(payload);
+        expect(OBR.broadcast.sendMessage).toHaveBeenCalledWith("com.ddbgamelog/api/roll", payload, { destination: "LOCAL" });
+    });
+
+    it("swallows broadcast failures", async () => {
+        (OBR.broadcast.sendMessage as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("down"));
+        await expect(sendGameLogRoll({} as never)).resolves.toBe(false);
     });
 });
