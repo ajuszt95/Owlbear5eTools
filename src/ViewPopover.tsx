@@ -503,14 +503,14 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
 // Spellcasting Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls) => {
+const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, action?: string) => {
     if (!spellcasting || !Array.isArray(spellcasting)) return null;
     return spellcasting.map((s, i) => (
         <div key={i} style={{ marginBottom: "12px", fontSize: "13px" }}>
             <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
                 {s.name || "Spellcasting"}
             </h3>
-            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
+            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, 0, action)}</div>}
 
             {/* At will */}
             {s.will && (
@@ -519,7 +519,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                     {s.will.map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.entry || sp.name || ""))}
                         </span>
                     ))}
                 </p>
@@ -536,7 +536,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                         {(v as any[]).map((sp: any, j: number) => (
                             <span key={j}>
                                 {j > 0 && ", "}
-                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.entry || sp.name || ""))}
                             </span>
                         ))}
                     </p>
@@ -554,13 +554,13 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                     {(data.spells || []).map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.entry || sp.name || ""))}
                         </span>
                     ))}
                 </p>
             ))}
 
-            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
+            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, 0, action)}</div>}
         </div>
     ));
 };
