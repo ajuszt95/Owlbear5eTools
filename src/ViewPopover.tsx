@@ -4,7 +4,17 @@ import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID, INITIATIVE_METADATA_K
 import { render5etoolsText, render5etoolsPlainText, type RenderSegment } from "./utils/renderer";
 import { applyAdvantageNotation, critFormula, evaluateRoll, keptD20FromDicePlus, type Advantage } from "./utils/diceRoller";
 import { dexModifier, initiativeNotation, initiativeTiebreakTotal, rollInitiativeBasic, writeInitiative } from "./initiative";
-import { useGameLog } from "./utils/gameLogContext";
+import { useGameLog, GameLogContext, type GameLogApi } from "./utils/gameLogContext";
+import {
+    buildGameLogPayload,
+    buildRollFromBasicResult,
+    buildRollFromDicePlusResult,
+    isExpiredPending,
+    sendGameLogRoll,
+    type DicePlusResult,
+    type GameLogEntity,
+    type GameLogIntent,
+} from "./utils/gameLog";
 import { APP_VERSION } from "./version";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -643,6 +653,19 @@ export default function ViewPopover() {
         return saved === "adv" || saved === "dis" ? saved : "normal";
     });
     const [critArmed, setCritArmed] = useState(false);
+    const [tokenName, setTokenName] = useState("");
+    const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+    const pendingRollsRef = useRef<Map<string, { intent: GameLogIntent; at: number }>>(new Map());
+    const entityRef = useRef<GameLogEntity | null>(null);
+
+    useEffect(() => {
+        if (!tokenId || !monster) return;
+        entityRef.current = {
+            id: tokenId, type: "monster",
+            name: tokenName || monster._displayName || monster.name || "Monster",
+            ...(avatarUrl ? { avatarUrl } : {}),
+        };
+    }, [tokenId, monster, tokenName, avatarUrl]);
     const resetAdvantage = () => {
         setRollAdvantage("normal");
         localStorage.setItem("5etools-roll-adv", "normal");
@@ -666,6 +689,10 @@ export default function ViewPopover() {
 
                     const items = await OBR.scene.items.getItems([tid]);
                     if (items.length === 0) { setError("Token not found."); return; }
+
+                    setTokenName(items[0].name || "");
+                    const imageUrl = (items[0] as { image?: { url?: string } }).image?.url;
+                    if (typeof imageUrl === "string" && imageUrl.startsWith("https://")) setAvatarUrl(imageUrl);
 
                     const monsterMetadata = items[0].metadata[METADATA_KEY];
                     if (!monsterMetadata) { setError("No data found. Try re-importing."); return; }
@@ -697,6 +724,23 @@ export default function ViewPopover() {
                     const resultUnstop = OBR.broadcast.onMessage(`${EXTENSION_ID}/roll-result`, (data: any) => {
                         console.log("[DiceResult] Received result:", JSON.stringify(data));
                         setIsRolling(false);
+
+                        const payload = (data?.data ?? data) as { rollId?: string; result?: unknown } | undefined;
+                        const rid = payload?.rollId;
+                        const pending = rid ? pendingRollsRef.current.get(rid) : undefined;
+                        if (rid && pending) {
+                            pendingRollsRef.current.delete(rid);
+                            try {
+                                const roll = buildRollFromDicePlusResult((payload?.result ?? payload) as DicePlusResult, pending.intent);
+                                const entity = entityRef.current;
+                                if (roll && entity) {
+                                    const out = buildGameLogPayload({ rollId: rid, entity, intent: pending.intent, rolls: [roll] });
+                                    if (out) void sendGameLogRoll(out);
+                                }
+                            } catch (err) {
+                                console.error("[GameLog] Failed to translate Dice+ result:", err);
+                            }
+                        }
                     });
                     const errorUnstop = OBR.broadcast.onMessage(`${EXTENSION_ID}/roll-error`, (data: any) => {
                         console.log("[DiceError] Received error:", JSON.stringify(data));
@@ -723,9 +767,17 @@ export default function ViewPopover() {
         };
         initView();
 
+        const sweep = setInterval(() => {
+            const now = Date.now();
+            for (const [id, entry] of pendingRollsRef.current) {
+                if (isExpiredPending(entry, now)) pendingRollsRef.current.delete(id);
+            }
+        }, 10_000);
+
         return () => {
             if (unstop) unstop();
             if (pingInterval) clearInterval(pingInterval);
+            clearInterval(sweep);
         };
     }, []);
 
@@ -1026,7 +1078,22 @@ export default function ViewPopover() {
 
     // ── Render ──────────────────────────────────────────────────────────────
 
+    const gameLogApi: GameLogApi = {
+        entity: entityRef.current,
+        logBasic: (rollId, result, intent) => {
+            const entity = entityRef.current;
+            if (!entity) return;
+            const roll = buildRollFromBasicResult(result, intent);
+            const payload = buildGameLogPayload({ rollId, entity, intent, rolls: [roll] });
+            if (payload) void sendGameLogRoll(payload);
+        },
+        registerPending: (rollId, intent) => {
+            pendingRollsRef.current.set(rollId, { intent, at: Date.now() });
+        },
+    };
+
     return (
+        <GameLogContext.Provider value={gameLogApi}>
         <div style={{ padding: "20px", fontFamily: "'Inter', sans-serif", color: "#333", background: "#fdf5e6", minHeight: "100vh", lineHeight: "1.5" }}>
 
             {/* Name + Remove */}
@@ -1310,6 +1377,7 @@ export default function ViewPopover() {
                 </div>
             </div>
         </div>
+        </GameLogContext.Provider>
     );
 }
 
