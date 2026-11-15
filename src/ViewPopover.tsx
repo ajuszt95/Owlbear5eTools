@@ -10,6 +10,7 @@ import {
     buildRollFromBasicResult,
     buildRollFromDicePlusResult,
     isExpiredPending,
+    resolveActionLabel,
     sendGameLogRoll,
     type DicePlusResult,
     type GameLogEntity,
@@ -212,6 +213,10 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
     // Per-button debounce — prevents accidental double-clicks on the same button.
     const lastRollTime = useRef(0);
 
+    // Card label: the owning action name when we have one, stripped of 5e.tools
+    // markup (spell names arrive as `{@spell fire bolt|PHB}`), else the button's label.
+    const actionLabel = resolveActionLabel(action, segment.label);
+
     const handleRoll = async () => {
         console.log("[RollButton] Clicked! Active:", active, "Engine:", rollEngine, "Rolling:", isRolling);
         if (!active) return;
@@ -238,7 +243,7 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 rollControls.resetAdvantage();
                 const rollId = "gl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
                 const glIntent = {
-                    action: action || segment.label || "Roll",
+                    action: actionLabel,
                     segmentKind: segment.kind,
                     advantage,
                     critArmed: isDamage && rollControls.critArmed,
@@ -279,7 +284,7 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
             };
 
             gameLog?.registerPending(rid, {
-                action: action || segment.label || "Roll",
+                action: actionLabel,
                 segmentKind: segment.kind,
                 advantage,
                 critArmed: isDamage && rollControls.critArmed,
@@ -519,7 +524,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                     {s.will.map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.entry || sp.name || ""))}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.name || sp.entry || ""))}
                         </span>
                     ))}
                 </p>
@@ -536,7 +541,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                         {(v as any[]).map((sp: any, j: number) => (
                             <span key={j}>
                                 {j > 0 && ", "}
-                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.entry || sp.name || ""))}
+                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.name || sp.entry || ""))}
                             </span>
                         ))}
                     </p>
@@ -554,7 +559,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                     {(data.spells || []).map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.entry || sp.name || ""))}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.name || sp.entry || ""))}
                         </span>
                     ))}
                 </p>

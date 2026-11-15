@@ -5,6 +5,7 @@ import {
     buildRollFromBasicResult,
     buildRollFromDicePlusResult,
     isExpiredPending,
+    resolveActionLabel,
     rollKindFor,
     rollTypeForSegment,
     sendGameLogRoll,
@@ -192,5 +193,31 @@ describe("sendGameLogRoll", () => {
     it("swallows broadcast failures", async () => {
         (OBR.broadcast.sendMessage as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("down"));
         await expect(sendGameLogRoll({} as never)).resolves.toBe(false);
+    });
+});
+
+describe("resolveActionLabel", () => {
+    it("prefers the owning action name over the button label", () => {
+        expect(resolveActionLabel("Scimitar", "Attack Roll")).toBe("Scimitar");
+        expect(resolveActionLabel("Fireball", "Roll")).toBe("Fireball");
+    });
+
+    it("strips 5e.tools markup from spell and ability names", () => {
+        expect(resolveActionLabel("{@spell fire bolt|PHB}", "Attack Roll")).toBe("fire bolt");
+        expect(resolveActionLabel("{@atk mw} {@hit 5}", "Attack Roll")).toBe("Melee Weapon Attack: +5");
+    });
+
+    it("trims surrounding whitespace", () => {
+        expect(resolveActionLabel("  STR Check  ")).toBe("STR Check");
+    });
+
+    it("falls back to the button label when there is no action name", () => {
+        expect(resolveActionLabel(undefined, "Attack Roll")).toBe("Attack Roll");
+        expect(resolveActionLabel("   ", "DC 15 Check")).toBe("DC 15 Check");
+    });
+
+    it("falls back to Roll when nothing is available", () => {
+        expect(resolveActionLabel(undefined)).toBe("Roll");
+        expect(resolveActionLabel("", "")).toBe("Roll");
     });
 });

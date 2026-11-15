@@ -1,5 +1,6 @@
 import OBR from "@owlbear-rodeo/sdk";
 import type { Advantage, RollResult } from "./diceRoller";
+import { render5etoolsPlainText } from "./renderer";
 import type { RollKind } from "./renderer";
 
 export type GameLogRollType =
@@ -68,6 +69,21 @@ const TYPE_BY_SEGMENT: Record<string, GameLogRollType> = {
 
 export function rollTypeForSegment(kind?: RollKind): GameLogRollType {
     return (kind && TYPE_BY_SEGMENT[kind]) || "other";
+}
+
+/**
+ * Card label for a roll. Prefers the owning action name (e.g. "Scimitar",
+ * "Fire Bolt"), stripped of 5e.tools markup since spell names arrive as
+ * `{@spell fire bolt|PHB}`; falls back to the button's own label, then "Roll".
+ */
+export function resolveActionLabel(
+    action: string | undefined,
+    fallback?: string,
+): string {
+    const named = render5etoolsPlainText(action ?? "").trim();
+    if (named) return named;
+    const label = (fallback ?? "").trim();
+    return label || "Roll";
 }
 
 export function rollKindFor(
