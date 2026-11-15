@@ -72,6 +72,26 @@ The stat-block viewer supports two roll modes via the **Roll Engine** toggle:
 
 Both `rollTarget` and `rollEngine` are persisted in `localStorage` (`5etools-roll-target` and `5etools-roll-engine`).
 
+### DDB Game Log mirror
+
+Every clickable roll is also mirrored to the [DDB Game Log](https://ddbgamelog.com) extension
+when it is installed, over the local broadcast channel `com.ddbgamelog/api/roll`
+(`destination: 'LOCAL'`, schema v1, `via: "5e Tools"`). Implemented in
+[`src/utils/gameLog.ts`](../../src/utils/gameLog.ts).
+
+- **Basic engine** - translated directly from the `RollResult`, so the card carries the exact
+  dice that were rolled. These cards are always `hidden: true`, because Basic rolls never leave
+  the GM's client.
+- **Dice+ engine** - the click is recorded as `rollId -> intent` before the request goes out; the
+  card is built from the matching `.../roll-result` payload and sent once. A roll Dice+ never
+  answers produces no card at all, since the result cannot be invented. Pending entries expire
+  after 30 s.
+- `entity` comes from the token (id, name, https avatar), `action` from the owning stat-block
+  entry, spell, or ability/save/skill name (5e.tools markup stripped), and `hidden` mirrors
+  `rollTarget === 'self'`.
+- Schema limits are enforced before sending: `action` is clamped to 256 chars, `entity.name` to
+  128, and any payload still over 15 000 bytes is dropped rather than sent.
+
 ## Remove button
 
 Strips all extension metadata from the token and resets its OBR name to `"Token"`, then closes

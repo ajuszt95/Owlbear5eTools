@@ -228,7 +228,10 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
         lastRollTime.current = now;
 
         const isDamage = segment.kind === 'damage';
-        const rollFormula = isDamage && rollControls.critArmed ? critFormula(segment.formula) : segment.formula;
+        // Captured once: the crit flag is cleared during the roll, so reading it
+        // again later in the handler would report the reset value.
+        const isCritDamage = isDamage && rollControls.critArmed;
+        const rollFormula = isCritDamage ? critFormula(segment.formula) : segment.formula;
         const advantage = segment.kind === 'attack' || segment.kind === 'check' || segment.kind === 'save' || segment.kind === 'dc'
             ? rollControls.advantage
             : 'normal';
@@ -238,7 +241,7 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 const result = evaluateRoll(rollFormula, { label: segment.label, advantage });
                 const critMessage = result.isNat20 && segment.kind === 'attack' ? "\nCrit armed for your next damage roll." : "";
                 if (result.isNat20 && segment.kind === 'attack') rollControls.setCritArmed(true);
-                if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
+                if (isCritDamage) rollControls.setCritArmed(false);
                 await OBR.notification.show(`${result.formattedText}${critMessage}`, result.variant);
                 rollControls.resetAdvantage();
                 const rollId = "gl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
@@ -246,7 +249,7 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                     action: actionLabel,
                     segmentKind: segment.kind,
                     advantage,
-                    critArmed: isDamage && rollControls.critArmed,
+                    critArmed: isCritDamage,
                     formula: rollFormula,
                     hidden: true,
                 };
@@ -275,7 +278,7 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 playerId: playerId,
                 playerName: player,
                 rollTarget: rollTarget,
-                diceNotation: isDamage && rollControls.critArmed
+                diceNotation: isCritDamage
                     ? critFormula(segment.formula)
                     : applyAdvantageNotation(segment.formula, advantage),
                 showResults: true,
@@ -287,7 +290,7 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 action: actionLabel,
                 segmentKind: segment.kind,
                 advantage,
-                critArmed: isDamage && rollControls.critArmed,
+                critArmed: isCritDamage,
                 formula: payload.diceNotation,
                 hidden: rollTarget === 'self',
             });
@@ -320,7 +323,7 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
 
             await OBR.broadcast.sendMessage("dice-plus/roll-request", payload, { destination: 'ALL' });
             // Consume crit like Basic does — otherwise Dice+ stays armed forever.
-            if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
+            if (isCritDamage) rollControls.setCritArmed(false);
             // Issue #23: one-shot advantage — every dispatched roll resets to Normal.
             rollControls.resetAdvantage();
             console.log("[RollButton] Roll request sent to Dice+:", rid, payload.diceNotation);
@@ -1087,7 +1090,6 @@ export default function ViewPopover() {
     // ── Render ──────────────────────────────────────────────────────────────
 
     const gameLogApi: GameLogApi = {
-        entity: entityRef.current,
         logBasic: (rollId, result, intent) => {
             const entity = entityRef.current;
             if (!entity) return;
