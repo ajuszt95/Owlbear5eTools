@@ -75,7 +75,7 @@ index.html#/view?id=ID     → <ViewPopover />   (full stat block viewer, 350×6
 - `render5etoolsPlainText(text)` - strips markup to plain string (used in metadata fields and display strings like AC conditions).
 
 ### `src/utils/gameLog.ts`
-- Mirrors stat-block rolls into the DDB Game Log extension on `com.ddbgamelog/api/roll` (`destination: 'LOCAL'`), schema v1. Basic rolls are translated from `RollResult`; Dice+ rolls are translated from the async `roll-result` payload via a `rollId → intent` registry in `ViewPopover`. Private rolls (`rollTarget === 'self'`) carry `hidden: true`. Payloads over 15 kB are dropped, never truncated.
+- Mirrors stat-block rolls into the DDB Game Log extension on `com.ddbgamelog/api/roll` (`destination: 'LOCAL'`), schema v1. Basic rolls are translated from `RollResult`; Dice+ rolls are translated from the async `roll-result` payload via a `rollId → intent` registry in `ViewPopover`. Private rolls (`rollTarget === 'self'`) carry `hidden: true`. Payloads over 15 kB are dropped, never truncated. Card labels come from the owning action (`renderEntries`/`renderSpellcasting`/ability tables thread it down), markup-stripped by `resolveActionLabel` so `{@spell fire bolt|PHB}` logs as "fire bolt"; with no action name it falls back to the button label.
 
 ---
 
