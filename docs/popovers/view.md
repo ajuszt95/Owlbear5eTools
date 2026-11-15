@@ -74,7 +74,7 @@ Both `rollTarget` and `rollEngine` are persisted in `localStorage` (`5etools-rol
 
 ### DDB Game Log mirror
 
-Every clickable roll is also mirrored to the [DDB Game Log](https://ddbgamelog.com) extension
+Every clickable roll is also mirrored to the DDB Game Log extension
 when it is installed, over the local broadcast channel `com.ddbgamelog/api/roll`
 (`destination: 'LOCAL'`, schema v1, `via: "5e Tools"`). Implemented in
 [`src/utils/gameLog.ts`](../../src/utils/gameLog.ts).
