@@ -110,6 +110,20 @@ npm run build      # tsc -b && vite build → ./dist/
 
 The Vite base path is `/Owlbear5eTools/`, matching the GitHub Pages deployment path.
 
+## Monster index
+
+`public/data/monster-index.json` powers the built-in search. Regenerate it after
+changing `src/homebrewSources.json` or when the upstream bestiary data changes:
+
+```bash
+npm run build:index
+```
+
+The script downloads the official 5e.tools mirror plus every partnered homebrew
+file, de-duplicates records by exact name+source, and writes the static JSON.
+Commit the regenerated file: the GitHub Actions build does **not** run
+`build:index`, so a stale file ships as-is.
+
 ## Continuous deployment
 
 Pushing to `main` (or `master`) triggers the GitHub Actions workflow

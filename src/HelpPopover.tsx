@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 import { fetchMonsterData, fetchMonsterByIdentity } from "./api";
-import { spawnMonstersFromData, MAX_SPAWN_COUNT } from "./spawning";
+import { spawnMonstersFromData, applyTokenFallback, MAX_SPAWN_COUNT } from "./spawning";
+import { getFallbackTokenUrl } from "./tokenFallback";
 import MonsterSearchInput from "./MonsterSearchInput";
 import InitiativeTab from "./InitiativeTab";
 import type { MonsterIndexEntry } from "./monsterIndex";
@@ -49,7 +50,7 @@ export default function HelpPopover() {
             const monster = picked
                 ? await fetchMonsterByIdentity(picked.n, picked.s)
                 : await fetchMonsterData(trimUrl);
-            const tokenUrl = monster.tokenUrl || "https://5e.tools/img/token/blank.png";
+            const tokenUrl = monster.tokenUrl || getFallbackTokenUrl();
 
             // Pre-fetch image dimensions for accurate DPI calculation in OBR.
             // On probe failure fall back to 300x300 and still spawn.
@@ -71,12 +72,15 @@ export default function HelpPopover() {
                 actualHeight = img.naturalHeight || 300;
             } catch {
                 probeFailed = true;
+                // Replace a dead mirror path with the bundled placeholder so
+                // the spawned token never carries a broken image URL.
+                applyTokenFallback(monster, true);
             }
 
             // Reuse the already-fetched monster: no second book-JSON fetch.
             const ids = await spawnMonstersFromData(monster, actualWidth, actualHeight, count, "row");
             if (probeFailed) {
-                setError("Token image couldn't be probed - spawned at fallback size.");
+                setError("Token image couldn't be probed - spawned with the placeholder image.");
             } else {
                 setSuccess(ids.length === 1 ? "Token spawned!" : `Spawned ${ids.length} tokens!`);
             }

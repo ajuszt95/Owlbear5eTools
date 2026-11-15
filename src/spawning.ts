@@ -1,5 +1,6 @@
 import OBR, { buildImage, type Item } from "@owlbear-rodeo/sdk";
 import { fetchMonsterData, fetchMonsterByIdentity, extractAC, extractHP, getMonsterDimensions, type Monster } from "./api";
+import { getFallbackTokenUrl } from "./tokenFallback";
 import { METADATA_KEY, BUBBLES_METADATA_KEY, BUBBLES_NAME } from "./Background";
 
 export type Formation = "row" | "grid" | "column";
@@ -12,6 +13,18 @@ export function clampSpawnCount(count: number): number {
         return 1;
     }
     return Math.min(MAX_SPAWN_COUNT, Math.max(1, Math.floor(count)));
+}
+
+/**
+ * Ensures a monster has a usable token image URL. A missing URL always gets
+ * the bundled placeholder; `force` also replaces an existing URL after a
+ * failed image probe so a dead mirror path cannot produce a broken token.
+ */
+export function applyTokenFallback(monster: Monster, force: boolean = false): Monster {
+    if (force || !monster.tokenUrl) {
+        monster.tokenUrl = getFallbackTokenUrl();
+    }
+    return monster;
 }
 
 /**
@@ -70,7 +83,7 @@ export function buildMonsterImageItem(
 
     return buildImage(
         {
-            url: monster.tokenUrl || "https://5e.tools/img/token/blank.png",
+            url: monster.tokenUrl || getFallbackTokenUrl(),
             mime: "image/png",
             width: itemWidth,
             height: itemHeight,

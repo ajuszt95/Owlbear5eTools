@@ -20,12 +20,14 @@ https://ajuszt95.github.io/Owlbear5eTools/manifest.json
 ## Features
 
 - **Import** a monster stat block onto an existing token (right-click → 5e Tools),
-  from a 5e.tools URL or the built-in monster search.
+  from a 5e.tools URL or the built-in monster search — including partnered
+  homebrew books such as Tome of Beasts, Flee Mortals, and Grim Hollow.
 - **View** the full stat block on a token: ability scores, saves, skills,
   actions, reactions, legendary/mythic actions, spellcasting — with clickable
   dice rolls.
 - **Quick Spawn** new tokens from the action-bar panel, sized to the correct
   grid footprint via DPI math (never `.scale()`, so Stat Bubbles stays happy).
+  Monsters without token art get a bundled placeholder instead of a broken image.
 - **Stat Bubbles sync**: HP/AC write to
   `com.owlbear-rodeo-bubbles-extension/metadata` on import and spawn.
 - **Two dice engines**: Dice+ broadcast rolls, or a local Basic roller with

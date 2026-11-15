@@ -37,7 +37,7 @@ natural pixel dimensions.
    ```
    This is the core DPI-calibration formula (see below).
 7. Builds an OBR image item via `buildImage(...)`, applying:
-   - Token image URL (falls back to a blank PNG)
+   - Token image URL (bundled placeholder when the monster has no token art)
    - MIME type `image/png`
    - Native pixel dimensions
    - Computed `itemDpi` and zero offset
