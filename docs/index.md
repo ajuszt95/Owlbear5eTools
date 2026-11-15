@@ -37,3 +37,4 @@ This directory contains the Open Knowledge Format (OKF v0.2) documentation for t
 | [TheGiddyLimit/homebrew-img](https://github.com/TheGiddyLimit/homebrew-img) | Monster token images (partnered content) |
 | [Stat Bubbles for D&D](https://extensions.owlbear.rodeo/) | HP/AC overlay extension, integrated via shared metadata keys |
 | [Dice+](https://extensions.owlbear.rodeo/) | Optional dice-rolling extension, integrated via broadcast channels |
+| [DDB Game Log](https://iamwarhead.github.io/ddb-game-log-for-obr/) | Optional extension; stat-block rolls are mirrored into its game log via the `com.ddbgamelog/api/roll` broadcast channel |

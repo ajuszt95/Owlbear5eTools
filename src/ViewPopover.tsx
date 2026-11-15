@@ -4,6 +4,18 @@ import { METADATA_KEY, BUBBLES_METADATA_KEY, EXTENSION_ID, INITIATIVE_METADATA_K
 import { render5etoolsText, render5etoolsPlainText, type RenderSegment } from "./utils/renderer";
 import { applyAdvantageNotation, critFormula, evaluateRoll, keptD20FromDicePlus, type Advantage } from "./utils/diceRoller";
 import { dexModifier, initiativeNotation, initiativeTiebreakTotal, rollInitiativeBasic, writeInitiative } from "./initiative";
+import { useGameLog, GameLogContext, type GameLogApi } from "./utils/gameLogContext";
+import {
+    buildGameLogPayload,
+    buildRollFromBasicResult,
+    buildRollFromDicePlusResult,
+    isExpiredPending,
+    resolveActionLabel,
+    sendGameLogRoll,
+    type DicePlusResult,
+    type GameLogEntity,
+    type GameLogIntent,
+} from "./utils/gameLog";
 import { APP_VERSION } from "./version";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -186,7 +198,7 @@ type RollControls = {
     resetAdvantage: () => void;
 };
 
-const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsRolling, rollControls }: {
+const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action }: {
     segment: Extract<RenderSegment, { type: 'roll' }>;
     active: boolean;
     rollTarget: string;
@@ -194,9 +206,16 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
     isRolling: boolean;
     setIsRolling: (v: boolean) => void;
     rollControls: RollControls;
+    action?: string;
 }) => {
+    const gameLog = useGameLog();
+
     // Per-button debounce — prevents accidental double-clicks on the same button.
     const lastRollTime = useRef(0);
+
+    // Card label: the owning action name when we have one, stripped of 5e.tools
+    // markup (spell names arrive as `{@spell fire bolt|PHB}`), else the button's label.
+    const actionLabel = resolveActionLabel(action, segment.label);
 
     const handleRoll = async () => {
         console.log("[RollButton] Clicked! Active:", active, "Engine:", rollEngine, "Rolling:", isRolling);
@@ -209,7 +228,10 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
         lastRollTime.current = now;
 
         const isDamage = segment.kind === 'damage';
-        const rollFormula = isDamage && rollControls.critArmed ? critFormula(segment.formula) : segment.formula;
+        // Captured once: the crit flag is cleared during the roll, so reading it
+        // again later in the handler would report the reset value.
+        const isCritDamage = isDamage && rollControls.critArmed;
+        const rollFormula = isCritDamage ? critFormula(segment.formula) : segment.formula;
         const advantage = segment.kind === 'attack' || segment.kind === 'check' || segment.kind === 'save' || segment.kind === 'dc'
             ? rollControls.advantage
             : 'normal';
@@ -219,9 +241,19 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 const result = evaluateRoll(rollFormula, { label: segment.label, advantage });
                 const critMessage = result.isNat20 && segment.kind === 'attack' ? "\nCrit armed for your next damage roll." : "";
                 if (result.isNat20 && segment.kind === 'attack') rollControls.setCritArmed(true);
-                if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
+                if (isCritDamage) rollControls.setCritArmed(false);
                 await OBR.notification.show(`${result.formattedText}${critMessage}`, result.variant);
                 rollControls.resetAdvantage();
+                const rollId = "gl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+                const glIntent = {
+                    action: actionLabel,
+                    segmentKind: segment.kind,
+                    advantage,
+                    critArmed: isCritDamage,
+                    formula: rollFormula,
+                    hidden: true,
+                };
+                try { gameLog?.logBasic(rollId, result, glIntent); } catch { /* logging must never break a roll */ }
                 console.log("[RollButton] Basic roll executed:", result);
             } catch (err) {
                 console.error("[RollButton] ERROR during basic roll:", err);
@@ -246,13 +278,22 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
                 playerId: playerId,
                 playerName: player,
                 rollTarget: rollTarget,
-                diceNotation: isDamage && rollControls.critArmed
+                diceNotation: isCritDamage
                     ? critFormula(segment.formula)
                     : applyAdvantageNotation(segment.formula, advantage),
                 showResults: true,
                 timestamp: ts,
                 source: EXTENSION_ID,
             };
+
+            gameLog?.registerPending(rid, {
+                action: actionLabel,
+                segmentKind: segment.kind,
+                advantage,
+                critArmed: isCritDamage,
+                formula: payload.diceNotation,
+                hidden: rollTarget === 'self',
+            });
 
             // Attack rolls: watch for the Dice+ result to auto-arm crit on Nat20.
             // Dice+ reports kept/dropped dice in result.groups — the kept d20
@@ -282,7 +323,7 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
 
             await OBR.broadcast.sendMessage("dice-plus/roll-request", payload, { destination: 'ALL' });
             // Consume crit like Basic does — otherwise Dice+ stays armed forever.
-            if (isDamage && rollControls.critArmed) rollControls.setCritArmed(false);
+            if (isCritDamage) rollControls.setCritArmed(false);
             // Issue #23: one-shot advantage — every dispatched roll resets to Normal.
             rollControls.resetAdvantage();
             console.log("[RollButton] Roll request sent to Dice+:", rid, payload.diceNotation);
@@ -324,16 +365,16 @@ const RollButton = ({ segment, active, rollTarget, rollEngine, isRolling, setIsR
     );
 };
 
-const renderMarkup = (text: string, active: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls) => {
+const renderMarkup = (text: string, active: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, action?: string) => {
     const segments = render5etoolsText(text);
     return segments.map((s, i) => (
         <span key={i}>
-            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} rollControls={rollControls} />}
+            {s.type === 'text' ? s.content : <RollButton segment={s} active={active} rollTarget={rollTarget} rollEngine={rollEngine} isRolling={isRolling} setIsRolling={setIsRolling} rollControls={rollControls} action={action} />}
         </span>
     ));
 };
 
-const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, depth = 0): React.ReactNode => {
+const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, depth = 0, action?: string): React.ReactNode => {
     if (!entries || !Array.isArray(entries)) return null;
     return entries.map((e, i) => {
         if (e == null) return null;
@@ -342,7 +383,7 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         if (typeof e === "string") {
             return (
                 <p key={i} style={{ margin: "4px 0", lineHeight: "1.4" }}>
-                    {renderMarkup(e, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                    {renderMarkup(e, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}
                 </p>
             );
         }
@@ -355,8 +396,8 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         if (type === "entries" || (!type && e.name && e.entries)) {
             return (
                 <div key={i} style={{ marginBottom: "6px" }}>
-                    <strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}. </strong>
-                    {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth)}
+                    <strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}. </strong>
+                    {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth, e.name || action)}
                 </div>
             );
         }
@@ -366,20 +407,20 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
             if (e.name && e.entry) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}.</strong></em>{" "}
-                        {renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}.</strong></em>{" "}
+                        {renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, e.name || action)}
                     </div>
                 );
             }
             if (e.name && e.entries) {
                 return (
                     <div key={i} style={{ marginBottom: "6px" }}>
-                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}.</strong></em>{" "}
-                        {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth)}
+                        <em><strong>{renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}.</strong></em>{" "}
+                        {renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth, e.name || action)}
                     </div>
                 );
             }
-            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</p>;
+            if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}</p>;
         }
 
         // List
@@ -390,7 +431,7 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                 <ul key={i} style={{ margin: "4px 0", paddingLeft: isHangNotitle ? "0" : "18px", listStyle: isHangNotitle ? "none" : "disc" }}>
                     {items.map((it: any, j: number) => (
                         <li key={j} style={{ marginBottom: "3px" }}>
-                            {renderEntries([it], activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1)}
+                            {renderEntries([it], activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1, action)}
                         </li>
                     ))}
                 </ul>
@@ -410,10 +451,10 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                 }}>
                     {e.name && (
                         <div style={{ fontWeight: "bold", color: "#58180D", marginBottom: "4px" }}>
-                            {renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                            {renderMarkup(e.name, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}
                         </div>
                     )}
-                    {e.entries && renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1)}
+                    {e.entries && renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth + 1, e.name || action)}
                 </div>
             );
         }
@@ -425,14 +466,14 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
             const rows: any[][] = e.rows || [];
             return (
                 <div key={i} style={{ margin: "8px 0", overflowX: "auto" }}>
-                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
+                    {caption && <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{renderMarkup(caption, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}</div>}
                     <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>
                         {colLabels.length > 0 && (
                             <thead>
                                 <tr>
                                     {colLabels.map((col: string, j: number) => (
                                         <th key={j} style={{ border: "1px solid #ccc", padding: "3px 6px", background: "#e8d5b7", textAlign: "left" }}>
-                                             {renderMarkup(col, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                                             {renderMarkup(col, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}
                                         </th>
                                     ))}
                                 </tr>
@@ -444,9 +485,9 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
                                     {row.map((cell: any, k: number) => (
                                         <td key={k} style={{ border: "1px solid #ccc", padding: "3px 6px" }}>
                                             {typeof cell === "string"
-                                                ? renderMarkup(cell, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)
+                                                ? renderMarkup(cell, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)
                                                 : typeof cell === "object" && cell?.type === "cell"
-                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)
+                                                    ? renderMarkup(cell.entry || cell.exact || "", activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)
                                                     : String(cell ?? "")}
                                         </td>
                                     ))}
@@ -459,8 +500,8 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
         }
 
         // Fallback — try to render entries/entry if present
-        if (e.entries) return renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth);
-        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</p>;
+        if (e.entries) return renderEntries(e.entries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, depth, action);
+        if (e.entry) return <p key={i} style={{ margin: "4px 0" }}>{renderMarkup(e.entry, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, action)}</p>;
 
         return null;
     });
@@ -470,14 +511,14 @@ const renderEntries = (entries: any[], activeDice: boolean, rollTarget: string, 
 // Spellcasting Renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls) => {
+const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget: string, rollEngine: 'dice-plus' | 'basic', isRolling: boolean, setIsRolling: (v: boolean) => void, rollControls: RollControls, action?: string) => {
     if (!spellcasting || !Array.isArray(spellcasting)) return null;
     return spellcasting.map((s, i) => (
         <div key={i} style={{ marginBottom: "12px", fontSize: "13px" }}>
             <h3 style={{ color: "#58180D", borderBottom: "1px solid #58180D", fontSize: "18px", margin: "16px 0 8px" }}>
                 {s.name || "Spellcasting"}
             </h3>
-            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
+            {s.headerEntries && <div style={{ marginBottom: "8px" }}>{renderEntries(s.headerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, 0, action)}</div>}
 
             {/* At will */}
             {s.will && (
@@ -486,7 +527,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                     {s.will.map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.name || sp.entry || ""))}
                         </span>
                     ))}
                 </p>
@@ -503,7 +544,7 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                         {(v as any[]).map((sp: any, j: number) => (
                             <span key={j}>
                                 {j > 0 && ", "}
-                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                                {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.name || sp.entry || ""))}
                             </span>
                         ))}
                     </p>
@@ -521,13 +562,13 @@ const renderSpellcasting = (spellcasting: any[], activeDice: boolean, rollTarget
                     {(data.spells || []).map((sp: any, j: number) => (
                         <span key={j}>
                             {j > 0 && ", "}
-                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}
+                            {renderMarkup(typeof sp === "string" ? sp : (sp.entry || sp.name || ""), activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, typeof sp === "string" ? sp : (sp.name || sp.entry || ""))}
                         </span>
                     ))}
                 </p>
             ))}
 
-            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls)}</div>}
+            {s.footerEntries && <div style={{ marginTop: "8px" }}>{renderEntries(s.footerEntries, activeDice, rollTarget, rollEngine, isRolling, setIsRolling, rollControls, 0, action)}</div>}
         </div>
     ));
 };
@@ -572,6 +613,7 @@ const AbilityTable = ({ monster, active, rollTarget, rollEngine, isRolling, setI
                             isRolling={isRolling}
                             setIsRolling={setIsRolling}
                             rollControls={rollControls}
+                            action={`${ab.toUpperCase()} Check`}
                         />)
                     </div>
                 </div>
@@ -620,6 +662,19 @@ export default function ViewPopover() {
         return saved === "adv" || saved === "dis" ? saved : "normal";
     });
     const [critArmed, setCritArmed] = useState(false);
+    const [tokenName, setTokenName] = useState("");
+    const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+    const pendingRollsRef = useRef<Map<string, { intent: GameLogIntent; at: number }>>(new Map());
+    const entityRef = useRef<GameLogEntity | null>(null);
+
+    useEffect(() => {
+        if (!tokenId || !monster) return;
+        entityRef.current = {
+            id: tokenId, type: "monster",
+            name: tokenName || monster._displayName || monster.name || "Monster",
+            ...(avatarUrl ? { avatarUrl } : {}),
+        };
+    }, [tokenId, monster, tokenName, avatarUrl]);
     const resetAdvantage = () => {
         setRollAdvantage("normal");
         localStorage.setItem("5etools-roll-adv", "normal");
@@ -643,6 +698,10 @@ export default function ViewPopover() {
 
                     const items = await OBR.scene.items.getItems([tid]);
                     if (items.length === 0) { setError("Token not found."); return; }
+
+                    setTokenName(items[0].name || "");
+                    const imageUrl = (items[0] as { image?: { url?: string } }).image?.url;
+                    if (typeof imageUrl === "string" && imageUrl.startsWith("https://")) setAvatarUrl(imageUrl);
 
                     const monsterMetadata = items[0].metadata[METADATA_KEY];
                     if (!monsterMetadata) { setError("No data found. Try re-importing."); return; }
@@ -674,6 +733,23 @@ export default function ViewPopover() {
                     const resultUnstop = OBR.broadcast.onMessage(`${EXTENSION_ID}/roll-result`, (data: any) => {
                         console.log("[DiceResult] Received result:", JSON.stringify(data));
                         setIsRolling(false);
+
+                        const payload = (data?.data ?? data) as { rollId?: string; result?: unknown } | undefined;
+                        const rid = payload?.rollId;
+                        const pending = rid ? pendingRollsRef.current.get(rid) : undefined;
+                        if (rid && pending) {
+                            pendingRollsRef.current.delete(rid);
+                            try {
+                                const roll = buildRollFromDicePlusResult((payload?.result ?? payload) as DicePlusResult, pending.intent);
+                                const entity = entityRef.current;
+                                if (roll && entity) {
+                                    const out = buildGameLogPayload({ rollId: rid, entity, intent: pending.intent, rolls: [roll] });
+                                    if (out) void sendGameLogRoll(out);
+                                }
+                            } catch (err) {
+                                console.error("[GameLog] Failed to translate Dice+ result:", err);
+                            }
+                        }
                     });
                     const errorUnstop = OBR.broadcast.onMessage(`${EXTENSION_ID}/roll-error`, (data: any) => {
                         console.log("[DiceError] Received error:", JSON.stringify(data));
@@ -700,9 +776,17 @@ export default function ViewPopover() {
         };
         initView();
 
+        const sweep = setInterval(() => {
+            const now = Date.now();
+            for (const [id, entry] of pendingRollsRef.current) {
+                if (isExpiredPending(entry, now)) pendingRollsRef.current.delete(id);
+            }
+        }, 10_000);
+
         return () => {
             if (unstop) unstop();
             if (pingInterval) clearInterval(pingInterval);
+            clearInterval(sweep);
         };
     }, []);
 
@@ -951,6 +1035,7 @@ export default function ViewPopover() {
                         isRolling={isRolling}
                         setIsRolling={setIsRolling}
                         rollControls={rollControls}
+                        action={`${k.toUpperCase()} Save`}
                     />
                 </span>
             ))}
@@ -971,6 +1056,7 @@ export default function ViewPopover() {
                         isRolling={isRolling}
                         setIsRolling={setIsRolling}
                         rollControls={rollControls}
+                        action={`${k} Check`}
                     />
                 </span>
             ))}
@@ -1003,7 +1089,21 @@ export default function ViewPopover() {
 
     // ── Render ──────────────────────────────────────────────────────────────
 
+    const gameLogApi: GameLogApi = {
+        logBasic: (rollId, result, intent) => {
+            const entity = entityRef.current;
+            if (!entity) return;
+            const roll = buildRollFromBasicResult(result, intent);
+            const payload = buildGameLogPayload({ rollId, entity, intent, rolls: [roll] });
+            if (payload) void sendGameLogRoll(payload);
+        },
+        registerPending: (rollId, intent) => {
+            pendingRollsRef.current.set(rollId, { intent, at: Date.now() });
+        },
+    };
+
     return (
+        <GameLogContext.Provider value={gameLogApi}>
         <div style={{ padding: "20px", fontFamily: "'Inter', sans-serif", color: "#333", background: "#fdf5e6", minHeight: "100vh", lineHeight: "1.5" }}>
 
             {/* Name + Remove */}
@@ -1287,6 +1387,7 @@ export default function ViewPopover() {
                 </div>
             </div>
         </div>
+        </GameLogContext.Provider>
     );
 }
 
